@@ -467,7 +467,7 @@
           const cfg = fval('server-config') || fval('c') || 'standalone.xml';
           const path = this.home + '/standalone/configuration/' + cfg;
           let doc;
-          try { doc = X.parse(c.fs.read(path, c.cred)); } catch (e) { c.err('WFLYCTL0085: Failed to parse configuration ' + (e.line ? 'ParseError at [row,col]:[' + e.line + ',' + e.col + '] ' : '') + e.message + '\n'); return 1; }
+          try { doc = X.parse(c.fs.read(path, c.cred)); } catch (e) { c.err('WFLYCTL0085: Failed to parse configuration ' + (e.line ? 'ParseError at [row,col]:[' + e.line + ',' + e.col + '] ' : '') + (e.java || e.message) + '\n'); return 1; }
           this.embedded = { doc, configPath: path, props: { 'jboss.home.dir': this.home }, dist: distOf(c, this.home) };
           this.cwd = [];
           return 0;

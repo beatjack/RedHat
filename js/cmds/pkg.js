@@ -401,25 +401,5 @@
     c.println(' num     #instances         #bytes  class name (module)\n-------------------------------------------------------\n   1:        312045       29154872  [B (java.base)\n   2:        290001        6960024  java.lang.String (java.base)\n   3:         61234        5388592  java.lang.Class (java.base)\n   4:         98812        3162000  java.util.HashMap$Node (java.base)\nTotal       1204520      64982341');
     return 0;
   };
-  C.keytool = async (c) => {
-    const a = c.args;
-    const val = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : null; };
-    if (a.includes('-genkeypair') || a.includes('-genkey')) {
-      const ks = c.resolve(val('-keystore') || (c.sh.cred.home + '/.keystore'));
-      const alias = val('-alias') || 'mykey';
-      c.fs.write(ks, 'KEYSTORE(PKCS12) alias=' + alias + ' dname=' + (val('-dname') || 'CN=' + c.vm.hostname) + '\n', { cred: c.cred, bin: true, mode: 0o600 });
-      c.println('Generating 2,048 bit RSA key pair and self-signed certificate (SHA256withRSA) with a validity of ' + (val('-validity') || '90') + ' days\n\tfor: ' + (val('-dname') || 'CN=' + c.vm.hostname));
-      return 0;
-    }
-    if (a.includes('-list')) {
-      const ks = c.resolve(val('-keystore') || (c.sh.cred.home + '/.keystore'));
-      let t; try { t = c.fs.read(ks, c.cred); } catch (e) { c.println('keytool error: java.lang.Exception: Keystore file does not exist: ' + ks); return 1; }
-      const al = /alias=(\S+)/.exec(t);
-      c.println('Keystore type: PKCS12\nKeystore provider: SUN\n\nYour keystore contains 1 entry\n\n' + (al ? al[1] : 'mykey') + ', ' + new Date().toDateString() + ', PrivateKeyEntry,\nCertificate fingerprint (SHA-256): ' + U.sha256(t).toUpperCase().match(/../g).slice(0, 32).join(':'));
-      return 0;
-    }
-    c.println('Key and Certificate Management Tool\n\nCommands:\n\n -genkeypair   Generates a key pair\n -list         Lists entries in a keystore\n');
-    return 0;
-  };
-  C.keytool.jvm = true;
+  // keytool: ver js/cmds/certs.js
 })(globalThis.JLab = globalThis.JLab || {});

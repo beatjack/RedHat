@@ -451,7 +451,7 @@
       const max = batch ? procs.length : c.term.rows - 8;
       for (const p of procs.slice(0, max)) {
         const res = Math.round(p.memMB * 1024);
-        s += U.pad(p.pid, 7) + ' ' + U.pad(p.user.slice(0, 8), 8, true) + '  20   0 ' + U.pad(Math.round(res * 1.8), 7) + ' ' + U.pad(res, 6) + ' ' + U.pad(Math.round(res / 8), 6) + ' ' + (p.cpu > 1 ? 'R' : 'S') + ' ' + U.pad((p.cpu || 0).toFixed(1), 5) + ' ' + U.pad((p.memMB / vm.ramMB * 100).toFixed(1), 5) + ' ' + U.pad(Math.floor((Date.now() - p.start) / 60000) + ':' + U.two(Math.floor((Date.now() - p.start) / 1000) % 60) + '.' + U.two(p.pid % 100), 9) + ' ' + p.name + '\n';
+        s += U.pad(p.pid, 7) + ' ' + U.pad(p.user.slice(0, 8), 8, true) + '  ' + U.pad(20 + (p.ni || 0), 2) + ' ' + U.pad(p.ni || 0, 3) + ' ' + U.pad(Math.round(res * 1.8), 7) + ' ' + U.pad(res, 6) + ' ' + U.pad(Math.round(res / 8), 6) + ' ' + (p.cpu > 1 ? 'R' : 'S') + ' ' + U.pad((p.cpu || 0).toFixed(1), 5) + ' ' + U.pad((p.memMB / vm.ramMB * 100).toFixed(1), 5) + ' ' + U.pad(Math.floor((Date.now() - p.start) / 60000) + ':' + U.two(Math.floor((Date.now() - p.start) / 1000) % 60) + '.' + U.two(p.pid % 100), 9) + ' ' + p.name + '\n';
       }
       return s;
     };

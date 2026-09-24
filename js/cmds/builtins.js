@@ -240,14 +240,96 @@
   };
   B.type = (c) => {
     let st = 0;
+    const all = c.args.includes('-a'), onlyPath = c.args.includes('-p') || c.args.includes('-P'), kind = c.args.includes('-t');
     for (const a of c.args.filter(x => !x.startsWith('-'))) {
-      if (c.sh.aliases[a] !== undefined) c.println(a + " is aliased to `" + c.sh.aliases[a] + "'");
-      else if (L.shparse.RESERVED.has(a)) c.println(a + ' is a shell keyword');
-      else if (c.sh.funcs[a]) c.println(a + ' is a function');
-      else if (B[a]) c.println(a + ' is a shell builtin');
-      else { const p = c.sh.which(a); if (p) c.println(a + ' is ' + p); else { c.err('-bash: type: ' + a + ': not found\n'); st = 1; } }
+      const found = [];
+      if (!onlyPath) {
+        if (c.sh.aliases[a] !== undefined) found.push(['alias', a + " is aliased to `" + c.sh.aliases[a] + "'"]);
+        if (L.shparse.RESERVED.has(a)) found.push(['keyword', a + ' is a shell keyword']);
+        if (c.sh.funcs[a]) found.push(['function', a + ' is a function']);
+        if (B[a]) found.push(['builtin', a + ' is a shell builtin']);
+      }
+      const h = c.sh.hashTable && c.sh.hashTable.get(a);
+      if (h && !all && !found.length) found.push(['file', a + ' is hashed (' + h.path + ')']);
+      for (const p of c.sh.whichAll(a)) found.push(['file', onlyPath ? p : a + ' is ' + p]);
+      if (!found.length) { if (!kind && !onlyPath) c.err('-bash: type: ' + a + ': not found\n'); st = 1; continue; }
+      for (const [k, line] of (all ? found : found.slice(0, 1))) c.println(kind ? k : line);
     }
     return st;
+  };
+  B.hash = (c) => {
+    const sh = c.sh;
+    sh.hashTable = sh.hashTable || new Map();
+    if (c.args[0] === '-r') { sh.hashTable.clear(); return 0; }
+    if (c.args[0] === '-d') { for (const n of c.args.slice(1)) sh.hashTable.delete(n); return 0; }
+    const names = c.args.filter(a => !a.startsWith('-'));
+    if (names.length) {
+      let st = 0;
+      for (const n of names) { const p = sh.whichAll(n)[0]; if (!p) { c.err('-bash: hash: ' + n + ': not found\n'); st = 1; continue; } sh.hashTable.set(n, { path: p, hits: 0 }); }
+      return st;
+    }
+    if (!sh.hashTable.size) { c.println('hash: hash table empty'); return 0; }
+    c.println('hits\tcommand');
+    for (const [, v] of sh.hashTable) c.println(U.pad(v.hits, 4) + '\t' + v.path);
+    return 0;
+  };
+  // time: mide un comando (real / user / sys en la salida de error)
+  B.time = async (c) => {
+    const t0 = Date.now();
+    let st = 0;
+    if (c.args.length) st = await c.sh.execCommand(c.args, c.io);
+    const real = (Date.now() - t0) / 1000;
+    const f = (s) => Math.floor(s / 60) + 'm' + (s % 60).toFixed(3) + 's';
+    const user = real * (0.02 + Math.random() * 0.05), sys = real * (0.01 + Math.random() * 0.03);
+    c.err('\nreal\t' + f(real) + '\nuser\t' + f(Math.min(real, user + 0.001)) + '\nsys\t' + f(Math.min(real, sys + 0.001)) + '\n');
+    return st;
+  };
+  // pila de directorios
+  const tildify = (sh, p) => p === sh.cred.home ? '~' : p.startsWith(sh.cred.home + '/') ? '~' + p.slice(sh.cred.home.length) : p;
+  const showDirs = (c) => c.println([c.sh.cwd].concat(c.sh.dirStack || []).map(p => tildify(c.sh, p)).join(' '));
+  B.dirs = (c) => {
+    const sh = c.sh; sh.dirStack = sh.dirStack || [];
+    if (c.args.includes('-c')) { sh.dirStack = []; return 0; }
+    const list = [sh.cwd].concat(sh.dirStack);
+    if (c.args.includes('-v')) { list.forEach((p, i) => c.println(U.pad(i, 2) + '  ' + (c.args.includes('-l') ? p : tildify(sh, p)))); return 0; }
+    if (c.args.includes('-p')) { list.forEach(p => c.println(c.args.includes('-l') ? p : tildify(sh, p))); return 0; }
+    c.println(list.map(p => c.args.includes('-l') ? p : tildify(sh, p)).join(' '));
+    return 0;
+  };
+  B.pushd = async (c) => {
+    const sh = c.sh; sh.dirStack = sh.dirStack || [];
+    const arg = c.args.filter(a => a !== '-n')[0];
+    if (!arg) {
+      if (!sh.dirStack.length) { c.err('-bash: pushd: no other directory\n'); return 1; }
+      const top = sh.dirStack.shift(), here = sh.cwd;
+      const r = await B.cd(Object.assign({}, c, { args: [top] }));
+      if (r) { sh.dirStack.unshift(top); return r; }
+      sh.dirStack.unshift(here); showDirs(c); return 0;
+    }
+    if (/^\+\d+$/.test(arg)) {
+      const list = [sh.cwd].concat(sh.dirStack), n = +arg.slice(1);
+      if (n >= list.length) { c.err('-bash: pushd: ' + arg + ': directory stack index out of range\n'); return 1; }
+      const rot = list.slice(n).concat(list.slice(0, n));
+      const r = await B.cd(Object.assign({}, c, { args: [rot[0]] })); if (r) return r;
+      sh.dirStack = rot.slice(1); showDirs(c); return 0;
+    }
+    const here = sh.cwd;
+    const r = await B.cd(Object.assign({}, c, { args: [arg] }));
+    if (r) return r;
+    sh.dirStack.unshift(here);
+    showDirs(c);
+    return 0;
+  };
+  B.popd = async (c) => {
+    const sh = c.sh; sh.dirStack = sh.dirStack || [];
+    if (!sh.dirStack.length) { c.err('-bash: popd: directory stack empty\n'); return 1; }
+    const arg = c.args[0];
+    if (arg && /^\+\d+$/.test(arg)) { const n = +arg.slice(1); if (n === 0) { const t = sh.dirStack.shift(); await B.cd(Object.assign({}, c, { args: [t] })); } else sh.dirStack.splice(n - 1, 1); showDirs(c); return 0; }
+    const top = sh.dirStack.shift();
+    const r = await B.cd(Object.assign({}, c, { args: [top] }));
+    if (r) { sh.dirStack.unshift(top); return r; }
+    showDirs(c);
+    return 0;
   };
   B.command = async (c) => {
     if (c.args[0] === '-v') { const a = c.args[1]; if (B[a]) { c.println(a); return 0; } const p = c.sh.which(a); if (p) { c.println(p); return 0; } return 1; }

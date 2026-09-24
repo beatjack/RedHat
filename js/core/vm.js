@@ -118,7 +118,7 @@
       const pid = this.nextPid++;
       const p = {
         pid, ppid: o.ppid || 1, user: o.user || 'root', cmd: o.cmd, name: o.name || o.cmd.split(/\s+/)[0].split('/').pop(),
-        memMB: o.memMB || 1, cpu: o.cpu || 0, start: Date.now(), tty: o.tty || '?', stat: o.stat || 'S', kind: o.kind || 'proc',
+        memMB: o.memMB || 1, cpu: o.cpu || 0, ni: o.ni != null ? o.ni : (this.defaultNice || 0), start: Date.now(), tty: o.tty || '?', stat: o.stat || 'S', kind: o.kind || 'proc',
         onSignal: o.onSignal || null, server: o.server || null, unit: o.unit || null
       };
       this.procs.set(pid, p);
@@ -303,7 +303,7 @@
       const k = this.osInfo.kernel;
       const say = async (s, ms) => { this.dmesg.push('[' + U.pad(((Date.now() - this.bootTime) / 1000).toFixed(6), 12) + '] ' + s); if (out) out(s + '\r\n'); await U.sleep(ms || 40); };
       // repone comandos de paquetes base que falten (VMs creadas con versiones anteriores del laboratorio)
-      for (const [name, pkg] of Object.entries(L.os.PACKAGES)) if (pkg.base) { try { L.os.installPackageFiles(this.fs, name, this.osInfo); } catch (e) { } }
+      try { L.os.repairPackages(this.fs, this.osInfo); } catch (e) { console.warn(e); }
       this.spawn({ user: 'root', cmd: '/usr/lib/systemd/systemd --switched-root --system --deserialize 31', name: 'systemd', memMB: 12 });
       this.spawn({ user: 'root', cmd: '[kthreadd]', memMB: 0 });
       this.spawn({ user: 'root', cmd: '/usr/lib/systemd/systemd-journald', memMB: 8 });
@@ -658,7 +658,7 @@
       const c = this.connect(fromVm, m[2], port);
       if (!c.ok) return Object.assign({ host: m[2], port }, c);
       const l = c.listener;
-      const req = { method: (opts && opts.method) || 'GET', path: m[4] || '/', auth: opts && opts.auth, host: m[2] };
+      const req = { method: (opts && opts.method) || 'GET', path: m[4] || '/', auth: opts && opts.auth, host: m[2], body: opts && opts.data, headers: (opts && opts.headers) || {} };
       if (l.server) return Object.assign({ ok: true, ip: c.ip, port }, l.server.handleHttp(req, l.kind));
       if (l.kind === 'ssh') return { ok: true, ip: c.ip, port, raw: 'SSH-2.0-OpenSSH_8.7\r\n' };
       return { ok: true, ip: c.ip, port, status: 200, body: '' };
@@ -690,6 +690,12 @@
       const cred = L.os.users.cred(vm.fs, user);
       if (!cred) { vm.logSys(unit, unit + '.service: Failed to determine user credentials: No such process'); return { ok: false, code: 217 }; }
       if (!vm.fs.can(node, cred, 'x')) { vm.logSys(unit, unit + '.service: Failed to execute ' + cmd + ': Permission denied'); return { ok: false, code: 203 }; }
+      // SELinux: systemd (init_t) no puede ejecutar archivos con etiqueta user_home_t/tmp_t...
+      if (L.selinux && L.selinux.blocksServiceExec(vm, vm.fs.realpath(cmd))) {
+        vm.logSys('(' + P.basename(cmd).slice(0, 13) + ')[' + vm.nextPid + ']', unit + '.service: Failed to locate executable ' + cmd + ': Permission denied');
+        vm.logSys('(' + P.basename(cmd).slice(0, 13) + ')[' + vm.nextPid + ']', unit + '.service: Failed at step EXEC spawning ' + cmd + ': Permission denied');
+        return { ok: false, code: 203 };
+      }
       const data = node.d || '';
       if (data.includes(L.jboss.SCRIPT_MARK + 'standalone') || data.includes(L.jboss.SCRIPT_MARK + 'launch')) {
         const home = P.dirname(P.dirname(vm.fs.realpath(cmd)));

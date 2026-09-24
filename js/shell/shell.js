@@ -595,6 +595,16 @@
     }
 
     // Busca un ejecutable en $PATH
+    whichAll(name) {
+      const out = [];
+      for (const d of (this.getVar('PATH') || '').split(':')) {
+        if (!d) continue;
+        const p = d.replace(/\/$/, '') + '/' + name;
+        const r = this.vm.fs.tryLookup(p);
+        if (r && r.node.t === 'f' && (r.node.m & 0o111) && !out.includes(p)) out.push(p);
+      }
+      return out;
+    }
     which(name) {
       if (name.includes('/')) return this.vm.fs.tryLookup(this.resolve(name)) ? this.resolve(name) : null;
       for (const d of (this.getVar('PATH') || '').split(':')) {
@@ -634,6 +644,11 @@
         if (!fs.can(r.node, this.cred, 'x')) { io.stderr.write('-bash: ' + name + ': Permission denied\n'); return 126; }
       } else {
         path = this.which(name);
+        if (path) {
+          this.hashTable = this.hashTable || new Map();
+          const h = this.hashTable.get(name);
+          if (h && h.path === path) h.hits++; else this.hashTable.set(name, { path, hits: 1 });
+        }
         if (!path) {
           io.stderr.write('-bash: ' + name + ': command not found\n');
           return 127;
