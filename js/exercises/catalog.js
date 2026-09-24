@@ -238,6 +238,154 @@
     }
   ];
 
+  // ================= Ejercicios adicionales de JBoss =================
+  const deps = (vm, name) => Q.servers(vm).map(s => s.deployments.get(name)).filter(Boolean);
+  const listDir = (vm, p) => { try { return vm.fs.readdir(p); } catch (e) { return []; } };
+
+  EX.push(
+    {
+      id: 'xml-roto', level: 'i', cat: 'Troubleshooting', title: 'Arranque fallido por XML mal formado',
+      goal: 'Detén JBoss, haz una copia de <code>standalone.xml</code> y "rómpelo" borrando el <code>/</code> de una etiqueta (por ejemplo <code>&lt;/system-properties&gt;</code> → <code>&lt;system-properties&gt;</code>). Intenta arrancar, guarda en <code>/tmp/xml-error.txt</code> las líneas del <code>server.log</code> con <b>WFLYCTL0085</b>, corrige el XML y deja JBoss corriendo otra vez.',
+      hints: ['El mensaje indica <code>ParseError at [row,col]</code>: ve a esa línea con <code>vi +FILA standalone.xml</code>.', '<code>grep WFLYCTL0085 $JBOSS_HOME/standalone/log/server.log &gt; /tmp/xml-error.txt</code>', 'Si te pierdes, restaura la copia: <code>cp standalone.xml.bak standalone.xml</code>. El editor gráfico tiene el botón "Validar XML".'],
+      solution: 'cd /opt/jboss/standalone/configuration\nsudo -u jboss cp standalone.xml standalone.xml.bak\nsudo sed -i "s|</system-properties>|<system-properties>|" standalone.xml\nsudo -u jboss /opt/jboss/bin/standalone.sh      # falla: WFLYCTL0085 / WFLYSRV0056\ngrep WFLYCTL0085 /opt/jboss/standalone/log/server.log > /tmp/xml-error.txt\nsudo -u jboss cp standalone.xml.bak standalone.xml\nsudo -u jboss nohup /opt/jboss/bin/standalone.sh -b 0.0.0.0 > /dev/null 2>&1 &',
+      checks: [
+        ['/tmp/xml-error.txt contiene WFLYCTL0085', (vm) => /WFLYCTL0085/.test(Q.read(vm, '/tmp/xml-error.txt'))],
+        ['standalone.xml vuelve a ser XML válido', (vm) => !!Q.xml(vm)],
+        ['JBoss está en ejecución', (vm) => !!Q.server(vm)]
+      ]
+    },
+    {
+      id: 'puerto-ocupado', level: 'i', cat: 'Troubleshooting', title: 'Puerto ocupado (Address already in use)',
+      goal: 'Con un JBoss ya corriendo, inicia una <b>segunda</b> instancia sobre una copia <code>standalone3</code> <u>sin</u> port-offset. Arrancará "with errors". Guarda en <code>/tmp/conflicto.txt</code> la línea del log con <b>Address already in use</b>, guarda en <code>/tmp/pid-8080.txt</code> el PID del proceso dueño del puerto 8080 y detén la instancia conflictiva.',
+      hints: ['<code>sudo -u jboss cp -r $JBOSS_HOME/standalone $JBOSS_HOME/standalone3</code> y arráncala con <code>-Djboss.server.base.dir=...</code>', 'El log de la segunda instancia está en <code>standalone3/log/server.log</code>. Busca también <b>WFLYSRV0026</b>.', '<code>sudo ss -tlnp | grep :8080</code> muestra <code>pid=NNNN</code>.', 'Detén la instancia que arrancó con errores con <code>kill PID</code> (señal TERM = apagado ordenado).'],
+      solution: 'cd /opt/jboss\nsudo -u jboss cp -r standalone standalone3\nsudo -u jboss nohup bin/standalone.sh -Djboss.server.base.dir=/opt/jboss/standalone3 > /dev/null 2>&1 &\nsleep 6; grep "Address already in use" standalone3/log/server.log > /tmp/conflicto.txt\nsudo ss -tlnp | grep :8080          # anota pid=NNNN\necho NNNN > /tmp/pid-8080.txt\nps -ef | grep standalone3            # PID de la segunda instancia (java)\nsudo kill PID_SEGUNDA',
+      checks: [
+        ['/tmp/conflicto.txt contiene "Address already in use"', (vm) => /Address already in use/.test(Q.read(vm, '/tmp/conflicto.txt'))],
+        ['/tmp/pid-8080.txt tiene el PID que escucha en 8080', (vm) => { const pid = parseInt(Q.read(vm, '/tmp/pid-8080.txt'), 10); return !!pid && vm.listeners.some(l => l.port === 8080 && l.pid === pid); }],
+        ['No queda ninguna instancia corriendo con errores', (vm) => Q.servers(vm).length > 0 && Q.servers(vm).every(s => !s.failedServices)]
+      ]
+    },
+    {
+      id: 'java-incompatible', level: 'a', cat: 'Troubleshooting', title: 'Java incompatible con la versión de JBoss',
+      goal: 'Requiere una VM con <b>WildFly 30</b> o <b>EAP 8.0</b> instalado (piden Java 11+). Instala <code>java-1.8.0-openjdk</code>, selecciónalo como predeterminado e intenta arrancar: guarda la salida en <code>/tmp/java-error.txt</code>. Luego vuelve a Java 17 y arranca JBoss correctamente.',
+      hints: ['<code>sudo alternatives --config java</code> para cambiar la versión activa.', 'Redirige la salida: <code>./standalone.sh &gt; /tmp/java-error.txt 2&gt;&amp;1</code>', 'Busca <b>UnsupportedClassVersionError</b>: "class file version 55.0" = Java 11, "52.0" = Java 8.'],
+      solution: 'sudo dnf install -y java-1.8.0-openjdk\nsudo alternatives --config java            # elige java-1.8.0\njava -version\nsudo -u jboss /opt/wildfly-30.0.1.Final/bin/standalone.sh > /tmp/java-error.txt 2>&1\ncat /tmp/java-error.txt\nsudo alternatives --config java            # vuelve a java-17\nsudo -u jboss nohup /opt/wildfly-30.0.1.Final/bin/standalone.sh -b 0.0.0.0 > /dev/null 2>&1 &',
+      checks: [
+        ['/tmp/java-error.txt contiene UnsupportedClassVersionError', (vm) => /UnsupportedClassVersionError/.test(Q.read(vm, '/tmp/java-error.txt'))],
+        ['El Java predeterminado es 11 o superior', (vm) => { const j = Q.java(vm); return !!j && j.major >= 11; }],
+        ['Un JBoss que exige Java 11+ está corriendo', (vm) => Q.servers(vm).some(s => s.dist.javaMin >= 11)]
+      ]
+    },
+    {
+      id: 'permisos-log', level: 'i', cat: 'Troubleshooting', title: 'Permisos: JBoss no arranca como jboss',
+      goal: 'Detén JBoss y cambia el dueño de <code>standalone/log</code> a <b>root</b> (simula que alguien lo arrancó como root). Intenta arrancar como <b>jboss</b>, observa el error <b>WFLYSRV0137</b> y corrige los permisos de toda la instalación. Termina con JBoss corriendo como jboss.',
+      hints: ['<code>sudo chown root:root $JBOSS_HOME/standalone/log</code>', '<code>ls -ld $JBOSS_HOME/standalone/*</code> para ver los dueños.', 'La solución habitual: <code>sudo chown -R jboss:jboss $JBOSS_HOME/</code> (con barra final si es un enlace).'],
+      solution: 'sudo chown root:root /opt/jboss/standalone/log\nsudo -u jboss /opt/jboss/bin/standalone.sh       # WFLYSRV0137\nls -ld /opt/jboss/standalone/*\nsudo chown -R jboss:jboss /opt/jboss/\nsudo -u jboss nohup /opt/jboss/bin/standalone.sh -b 0.0.0.0 > /dev/null 2>&1 &',
+      checks: [
+        ['standalone/log, data y tmp pertenecen a jboss', (vm) => { const hm = Q.home(vm); return !!hm && ['log', 'data', 'tmp'].every(d => Q.owner(vm, hm + '/standalone/' + d) === 'jboss'); }],
+        ['JBoss corre como jboss', (vm) => Q.servers(vm).some(s => s.user === 'jboss')]
+      ]
+    },
+    {
+      id: 'exploded', level: 'i', cat: 'Despliegues', title: 'Despliegue explotado con .dodeploy',
+      goal: 'Crea en <code>standalone/deployments</code> un <b>directorio</b> <code>miapp.war</code> con <code>index.html</code> y <code>WEB-INF/web.xml</code>. Un despliegue explotado no se despliega solo: usa el marcador <code>.dodeploy</code>. Verifica con <code>curl http://localhost:8080/miapp/</code>.',
+      hints: ['<code>mkdir -p miapp.war/WEB-INF</code> dentro de deployments (como jboss).', 'El web.xml mínimo: <code>&lt;web-app version="5.0"&gt;&lt;/web-app&gt;</code>', '<code>touch miapp.war.dodeploy</code> y espera unos segundos: aparecerá <code>miapp.war.deployed</code>.', 'Si editas index.html, vuelve a crear el .dodeploy para redesplegar.'],
+      solution: 'cd /opt/jboss/standalone/deployments\nsudo -u jboss mkdir -p miapp.war/WEB-INF\necho "<h1>Mi app explotada</h1>" | sudo -u jboss tee miapp.war/index.html\necho \'<web-app version="5.0"></web-app>\' | sudo -u jboss tee miapp.war/WEB-INF/web.xml\nsudo -u jboss touch miapp.war.dodeploy\nsleep 6; ls; curl http://localhost:8080/miapp/',
+      checks: [
+        ['deployments/miapp.war es un directorio', (vm) => Q.servers(vm).some(s => { const c = s.scannerConfig(); return c && vm.fs.isDir(c.dir + '/miapp.war'); })],
+        ['miapp.war desplegado (OK)', (vm) => deps(vm, 'miapp.war').some(d => d.status === 'OK')],
+        ['Existe el marcador miapp.war.deployed', (vm) => Q.servers(vm).some(s => { const c = s.scannerConfig(); return c && vm.fs.exists(c.dir + '/miapp.war.deployed'); })]
+      ]
+    },
+    {
+      id: 'undeploy-marcador', level: 'b', cat: 'Despliegues', title: 'Retirar una app con marcadores',
+      goal: 'Con <code>hello.war</code> desplegado por el scanner, retíralo <u>sin borrar el .war</u>: elimina el marcador <code>hello.war.deployed</code> y comprueba que aparece <code>hello.war.undeployed</code> y que <code>/hello/</code> responde 404.',
+      hints: ['Lee <code>standalone/deployments/README.txt</code>: explica cada marcador.', '<code>rm hello.war.deployed</code> y espera 5 segundos.', 'Para volver a desplegarlo: <code>touch hello.war.dodeploy</code>.'],
+      solution: 'cd /opt/jboss/standalone/deployments\nsudo rm hello.war.deployed\nsleep 6; ls\ncurl -I http://localhost:8080/hello/',
+      checks: [
+        ['Existe hello.war.undeployed', (vm) => Q.servers(vm).some(s => { const c = s.scannerConfig(); return c && vm.fs.exists(c.dir + '/hello.war.undeployed'); })],
+        ['hello.war sigue en deployments', (vm) => Q.servers(vm).some(s => { const c = s.scannerConfig(); return c && vm.fs.exists(c.dir + '/hello.war'); })],
+        ['hello.war ya no está activo', (vm) => Q.servers(vm).length > 0 && !deps(vm, 'hello.war').some(d => d.status === 'OK')]
+      ]
+    },
+    {
+      id: 'empaquetar', level: 'i', cat: 'Despliegues', title: 'Empaquetar tu propia app con jar',
+      goal: 'En tu home crea la carpeta <code>tienda/</code> con <code>index.html</code>, <code>WEB-INF/web.xml</code> y <code>WEB-INF/jboss-web.xml</code> con context-root <b>/tienda</b>. Empaqueta con <code>jar -cvf tienda.war -C tienda .</code> y despliégala con <b>jboss-cli</b>.',
+      hints: ['jboss-web.xml: <code>&lt;jboss-web&gt;&lt;context-root&gt;/tienda&lt;/context-root&gt;&lt;/jboss-web&gt;</code>', 'Revisa el contenido con <code>jar -tf tienda.war</code>.', '<code>jboss-cli.sh -c --command="deploy ~/tienda.war"</code> (usa la ruta completa).'],
+      solution: 'mkdir -p ~/tienda/WEB-INF && cd ~\necho "<h1>Tienda</h1>" > tienda/index.html\necho \'<web-app version="5.0"></web-app>\' > tienda/WEB-INF/web.xml\necho \'<jboss-web><context-root>/tienda</context-root></jboss-web>\' > tienda/WEB-INF/jboss-web.xml\njar -cvf tienda.war -C tienda .\nsudo /opt/jboss/bin/jboss-cli.sh -c --command="deploy $HOME/tienda.war"\ncurl http://localhost:8080/tienda/',
+      checks: [
+        ['Existe tienda.war en tu home', (vm) => vm.fs.isFile(Q.home1(vm) + '/tienda.war')],
+        ['tienda.war incluye WEB-INF/jboss-web.xml', (vm) => { const a = L.archive.decode(Q.read(vm, Q.home1(vm) + '/tienda.war')); return !!a && a.entries.some(e => e.p === 'WEB-INF/jboss-web.xml'); }],
+        ['Desplegada por CLI en /tienda', (vm) => deps(vm, 'tienda.war').some(d => d.managed && d.status === 'OK' && d.contextRoot === '/tienda')]
+      ]
+    },
+    {
+      id: 'deshabilitar', level: 'b', cat: 'JBoss CLI', title: 'Deshabilitar y rehabilitar un despliegue',
+      goal: 'Despliega <code>/opt/installers/apps/portal.war</code> con la CLI y luego <b>deshabilítalo</b> sin eliminarlo del repositorio de contenido (<code>:undeploy</code>). Debe quedar registrado en <code>standalone.xml</code> como <code>enabled="false"</code>.',
+      hints: ['<code>deploy /opt/installers/apps/portal.war</code>', '<code>/deployment=portal.war:undeploy</code> lo deshabilita; <code>/deployment=portal.war:deploy</code> lo vuelve a habilitar.', '<code>deployment-info</code> muestra la columna ENABLED.'],
+      solution: '/opt/jboss/bin/jboss-cli.sh -c\ndeploy /opt/installers/apps/portal.war\n/deployment=portal.war:undeploy\ndeployment-info\nquit\ngrep -A2 \'name="portal.war"\' /opt/jboss/standalone/configuration/standalone.xml',
+      checks: [
+        ['portal.war registrado como despliegue administrado', (vm) => { const d = Q.xml(vm); return !!d && X.find(d, 'deployment', n => X.attr(n, 'name') === 'portal.war').length > 0; }],
+        ['Deshabilitado en standalone.xml (enabled="false")', (vm) => { const d = Q.xml(vm); return !!d && X.find(d, 'deployment', n => X.attr(n, 'name') === 'portal.war' && X.attr(n, 'enabled') === 'false').length > 0; }]
+      ]
+    },
+    {
+      id: 'embed-server', level: 'a', cat: 'JBoss CLI', title: 'Configuración offline con embed-server',
+      goal: 'Con JBoss <b>detenido</b>, usa <code>jboss-cli.sh</code> con <code>embed-server</code> para agregar la propiedad de sistema <b>modo.mantenimiento=true</b> y un logger <b>org.hibernate</b> en <b>WARN</b>. Útil cuando no puedes arrancar el servidor para configurarlo.',
+      hints: ['<code>jboss-cli.sh</code> (sin -c) → <code>embed-server --server-config=standalone.xml</code>', '<code>/system-property=modo.mantenimiento:add(value=true)</code>', '<code>/subsystem=logging/logger=org.hibernate:add(level=WARN)</code> y <code>stop-embedded-server</code>.'],
+      solution: 'sudo -u jboss /opt/jboss/bin/jboss-cli.sh\nembed-server --server-config=standalone.xml\n/system-property=modo.mantenimiento:add(value=true)\n/subsystem=logging/logger=org.hibernate:add(level=WARN)\nstop-embedded-server\nquit',
+      checks: [
+        ['Propiedad modo.mantenimiento=true en standalone.xml', (vm) => { const d = Q.xml(vm); return !!d && X.find(d, 'property', n => X.attr(n, 'name') === 'modo.mantenimiento' && X.attr(n, 'value') === 'true').length > 0; }],
+        ['Logger org.hibernate en WARN', (vm) => { const d = Q.xml(vm); if (!d) return false; const lg = X.find(d, 'logger', n => X.attr(n, 'category') === 'org.hibernate')[0]; return !!lg && X.attr(X.kid(lg, 'level'), 'name') === 'WARN'; }]
+      ]
+    },
+    {
+      id: 'backup-config', level: 'b', cat: 'Operación', title: 'Respaldo de la configuración',
+      goal: 'Crea <code>/backup</code> y genera un respaldo comprimido de <code>standalone/configuration</code> llamado <code>jboss-config-AAAAMMDD.tar.gz</code> (con la fecha de hoy). Comprueba su contenido con <code>tar -tzf</code>.',
+      hints: ['La fecha en ese formato: <code>date +%Y%m%d</code>', '<code>sudo tar -czf /backup/jboss-config-$(date +%Y%m%d).tar.gz -C $JBOSS_HOME/standalone configuration</code>'],
+      solution: 'sudo mkdir -p /backup\nsudo tar -czf /backup/jboss-config-$(date +%Y%m%d).tar.gz -C /opt/jboss/standalone configuration\ntar -tzf /backup/jboss-config-*.tar.gz | head',
+      checks: [
+        ['Existe /backup/jboss-config-AAAAMMDD.tar.gz', (vm) => listDir(vm, '/backup').some(f => /^jboss-config-\d{8}\.tar\.gz$/.test(f))],
+        ['Es un tar.gz que contiene standalone.xml', (vm) => listDir(vm, '/backup').filter(f => /^jboss-config-\d{8}\.tar\.gz$/.test(f)).some(f => { const a = L.archive.decode(Q.read(vm, '/backup/' + f)); return !!a && a.format === 'tar.gz' && a.entries.some(e => /(^|\/)standalone\.xml$/.test(e.p)); })]
+      ]
+    },
+    {
+      id: 'thread-dump', level: 'i', cat: 'Troubleshooting', title: 'Thread dump para soporte',
+      goal: 'Ante un servidor "colgado", soporte suele pedir un <b>thread dump</b>. Encuentra el PID de la JVM de JBoss con <code>jps</code> o <code>pgrep</code> y guarda el volcado en <code>/tmp/threaddump.txt</code>.',
+      hints: ['<code>sudo jps -l</code> o <code>pgrep -f jboss-modules</code>', 'jstack debe ejecutarse como el mismo usuario que la JVM: <code>sudo -u jboss jstack PID</code>.', 'Alternativa: <code>jcmd PID Thread.print</code>.'],
+      solution: 'PID=$(pgrep -f jboss-modules | head -1)\nsudo -u jboss jstack $PID > /tmp/threaddump.txt\nhead /tmp/threaddump.txt',
+      checks: [['/tmp/threaddump.txt contiene "Full thread dump"', (vm) => /Full thread dump/.test(Q.read(vm, '/tmp/threaddump.txt'))]]
+    },
+    {
+      id: 'jdr', level: 'b', cat: 'Operación', title: 'Reporte JDR para Red Hat',
+      goal: 'Genera un reporte de diagnóstico con <code>jdr.sh</code> (JBoss Diagnostic Reporter) y localiza el <code>.zip</code> generado. Es lo que Red Hat pide al abrir un caso de soporte.',
+      hints: ['<code>sudo -u jboss $JBOSS_HOME/bin/jdr.sh</code>', 'La salida indica la ruta: <code>standalone/tmp/jdr_*.zip</code>.', 'Revisa su contenido con <code>unzip -l</code>.'],
+      solution: 'sudo -u jboss /opt/jboss/bin/jdr.sh\nls -l /opt/jboss/standalone/tmp/\nunzip -l /opt/jboss/standalone/tmp/jdr_*.zip | head',
+      checks: [['Existe un reporte standalone/tmp/jdr_*.zip', (vm) => Q.homes(vm).some(hm => listDir(vm, hm + '/standalone/tmp').some(f => /^jdr_.*\.zip$/.test(f)))]]
+    },
+    {
+      id: 'usuario-grupo', level: 'b', cat: 'JBoss', title: 'Usuario de consola con grupo',
+      goal: 'Crea el usuario de gestión <b>operador</b> que pertenezca al grupo <b>operadores</b> usando <code>add-user.sh</code>, y verifica ambos archivos: <code>mgmt-users.properties</code> y <code>mgmt-groups.properties</code>.',
+      hints: ['<code>add-user.sh -u operador -p \'Oper#2024\' -g operadores</code>', '<code>grep operador $JBOSS_HOME/standalone/configuration/mgmt-*.properties</code>'],
+      solution: 'sudo -u jboss /opt/jboss/bin/add-user.sh -u operador -p \'Oper#2024\' -g operadores\ngrep operador /opt/jboss/standalone/configuration/mgmt-*.properties',
+      checks: [
+        ['operador está en mgmt-users.properties', (vm) => Q.homes(vm).some(hm => /^operador=[0-9a-f]{32}$/m.test(Q.read(vm, hm + '/standalone/configuration/mgmt-users.properties')))],
+        ['operador pertenece al grupo operadores', (vm) => Q.homes(vm).some(hm => /^operador=.*\boperadores\b/m.test(Q.read(vm, hm + '/standalone/configuration/mgmt-groups.properties')))]
+      ]
+    },
+    {
+      id: 'script-monitoreo', level: 'a', cat: 'Operación', title: 'Script de monitoreo del servidor',
+      goal: 'Escribe <code>/usr/local/bin/check-jboss.sh</code> (ejecutable) que consulte el estado con <code>jboss-cli.sh --command=":read-attribute(name=server-state)"</code> y muestre <b>OK</b> si el resultado es <code>running</code> o <b>FALLA</b> en caso contrario. Ejecútalo y guarda su salida en <code>/tmp/estado.txt</code>.',
+      hints: ['Empieza con <code>#!/bin/bash</code>.', 'Guarda la salida en una variable: <code>R=$(/opt/jboss/bin/jboss-cli.sh -c --command=":read-attribute(name=server-state)")</code>', '<code>if echo "$R" | grep -q running; then echo OK; else echo FALLA; fi</code>', '<code>sudo chmod +x /usr/local/bin/check-jboss.sh</code>'],
+      solution: 'sudo tee /usr/local/bin/check-jboss.sh <<\'EOF\'\n#!/bin/bash\nR=$(/opt/jboss/bin/jboss-cli.sh -c --command=":read-attribute(name=server-state)" 2>&1)\nif echo "$R" | grep -q running; then\n    echo "OK - JBoss en ejecución"\nelse\n    echo "FALLA - $R"\n    exit 2\nfi\nEOF\nsudo chmod +x /usr/local/bin/check-jboss.sh\nsudo /usr/local/bin/check-jboss.sh > /tmp/estado.txt; cat /tmp/estado.txt',
+      checks: [
+        ['El script existe y es ejecutable', (vm) => { const n = Q.node(vm, '/usr/local/bin/check-jboss.sh'); return !!n && n.t === 'f' && (n.m & 0o111) !== 0; }],
+        ['Consulta server-state con jboss-cli', (vm) => /jboss-cli\.sh[\s\S]*server-state/.test(Q.read(vm, '/usr/local/bin/check-jboss.sh'))],
+        ['/tmp/estado.txt indica OK', (vm) => /\bOK\b/.test(Q.read(vm, '/tmp/estado.txt'))]
+      ]
+    }
+  );
+
   L.exercises = EX;
   L.exercisesQ = Q;
 })(globalThis.JLab = globalThis.JLab || {});

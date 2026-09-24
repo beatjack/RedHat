@@ -23,7 +23,7 @@ No requiere instalar nada ni conexión a Internet: todas las dependencias están
 | **Consola JBoss** | Consola web estilo HAL: despliegues, datasources, propiedades, socket bindings, interfaces, logging, JVM, logs en vivo |
 | **Navegador** | Ver las apps desplegadas en `http://<IP-VM>:8080/…` respetando bind address y firewall |
 | **Monitor** | Gráficas de CPU/RAM por VM, procesos y puertos |
-| **Ejercicios** | 20 retos progresivos (básico → avanzado) con **verificación automática**, pistas y solución |
+| **Ejercicios** | 34 retos progresivos (básico → avanzado) con **verificación automática**, pistas y solución: instalación, despliegues, CLI, troubleshooting (XML roto, puertos ocupados, Java incompatible, permisos), operación (respaldos, thread dumps, JDR, scripts de monitoreo) |
 | **Linux real (v86)** | Emulador x86 con kernel Linux verdadero desde una ISO/bzImage de tu equipo |
 | **Guía** | Arquitectura, primeros pasos y atajos |
 
@@ -78,17 +78,18 @@ js/cmds/                comandos (archivos, texto, sistema, red, paquetes, JBoss
 js/exercises/           catálogo de ejercicios y verificaciones
 js/ui/                  gestor de ventanas y aplicaciones del escritorio
 vendor/                 xterm.js (MIT), v86 (BSD-2-Clause) con wasm y BIOS embebidos
-test/run-tests.js       pruebas automatizadas del motor (node test/run-tests.js)
+test/                   pruebas automatizadas (run-tests.js y exercises-tests.js)
 docs/                   notas de fidelidad y licencias
 ```
 
 ## Pruebas
 
 ```bash
-node test/run-tests.js
+node test/run-tests.js         # motor: 13 grupos de pruebas
+node test/exercises-tests.js   # resuelve y verifica los ejercicios de JBoss adicionales
 ```
 
-Ejecuta 13 grupos de pruebas sin navegador: VFS y permisos, shell, herramientas de texto, dnf, ciclo de vida de JBoss (memoria insuficiente, arranque, scanner, CLI, reload), red y firewall entre VMs, systemd, ejercicios y exportación.
+`run-tests.js` cubre sin navegador: VFS y permisos, shell, herramientas de texto, dnf, ciclo de vida de JBoss (memoria insuficiente, arranque, scanner, CLI, reload), red y firewall entre VMs, systemd, ejercicios y exportación. `exercises-tests.js` aplica la solución de referencia de cada ejercicio adicional y comprueba que su verificación pase (y que no pase antes de resolverlo).
 
 ## Licencias de terceros
 
