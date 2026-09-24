@@ -302,6 +302,8 @@
       this.dmesg = [];
       const k = this.osInfo.kernel;
       const say = async (s, ms) => { this.dmesg.push('[' + U.pad(((Date.now() - this.bootTime) / 1000).toFixed(6), 12) + '] ' + s); if (out) out(s + '\r\n'); await U.sleep(ms || 40); };
+      // repone comandos de paquetes base que falten (VMs creadas con versiones anteriores del laboratorio)
+      for (const [name, pkg] of Object.entries(L.os.PACKAGES)) if (pkg.base) { try { L.os.installPackageFiles(this.fs, name, this.osInfo); } catch (e) { } }
       this.spawn({ user: 'root', cmd: '/usr/lib/systemd/systemd --switched-root --system --deserialize 31', name: 'systemd', memMB: 12 });
       this.spawn({ user: 'root', cmd: '[kthreadd]', memMB: 0 });
       this.spawn({ user: 'root', cmd: '/usr/lib/systemd/systemd-journald', memMB: 8 });

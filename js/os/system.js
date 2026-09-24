@@ -36,7 +36,7 @@
       cmds: ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown', 'chgrp', 'ln', 'pwd', 'echo', 'printf', 'head', 'tail',
         'wc', 'sort', 'uniq', 'cut', 'tr', 'tee', 'basename', 'dirname', 'realpath', 'readlink', 'stat', 'du', 'df', 'date', 'sleep',
         'whoami', 'id', 'groups', 'uname', 'env', 'printenv', 'seq', 'yes', 'true', 'false', 'test', '[', 'nl', 'rev', 'base64',
-        'md5sum', 'sha256sum', 'nproc', 'mktemp', 'install', 'timeout', 'nohup', 'stdbuf', 'who', 'tac', 'paste', 'split', 'expr', 'hostid', 'dd']
+        'md5sum', 'sha256sum', 'nproc', 'dir', 'mktemp', 'install', 'timeout', 'nohup', 'stdbuf', 'who', 'tac', 'paste', 'split', 'expr', 'hostid', 'dd']
     },
     'util-linux': { v: '2.37.4-18', size: 4.2, base: true, desc: 'Collection of basic system utilities', cmds: ['lsblk', 'lscpu', 'dmesg', 'more', 'kill', 'su', 'logger', 'cal', 'mount', 'findmnt', 'last', 'script', 'rename', 'col'] },
     'procps-ng': { v: '3.3.17-14', size: 1.0, base: true, desc: 'System and process monitoring utilities', cmds: ['ps', 'top', 'free', 'uptime', 'w', 'vmstat', 'pkill', 'pgrep', 'kill', 'watch', 'pidof'] },
@@ -50,9 +50,11 @@
     'tar': { v: '1.34-6', size: 3.0, base: true, desc: 'GNU file archiving program', cmds: ['tar'] },
     'gzip': { v: '1.12-1', size: 0.4, base: true, desc: 'The GNU data compression program', cmds: ['gzip', 'gunzip', 'zcat'] },
     'hostname': { v: '3.23-6', size: 0.1, base: true, desc: 'Utility to set/show the host name or domain name', cmds: ['hostname'] },
-    'shadow-utils': { v: '4.9-8', size: 3.8, base: true, desc: 'Utilities for managing accounts and shadow password files', cmds: ['useradd', 'userdel', 'usermod', 'groupadd', 'groupdel', 'passwd', 'chage', 'newgrp', 'gpasswd'] },
+    'shadow-utils': { v: '4.9-8', size: 3.8, base: true, desc: 'Utilities for managing accounts and shadow password files', cmds: ['useradd', 'adduser', 'userdel', 'usermod', 'groupadd', 'groupdel', 'passwd', 'chage', 'newgrp', 'gpasswd'] },
     'sudo': { v: '1.9.5p2-10', size: 4.6, base: true, desc: 'Allows restricted root access for specified users', cmds: ['sudo', 'visudo'] },
     'systemd': { v: '252-32', size: 25.0, base: true, desc: 'System and Service Manager', cmds: ['systemctl', 'journalctl', 'hostnamectl', 'timedatectl', 'reboot', 'poweroff', 'shutdown', 'halt', 'loginctl'] },
+    'alternatives': { v: '1.24-1', size: 0.1, base: true, desc: 'A tool to maintain symbolic links determining default commands', cmds: ['alternatives', 'update-alternatives'] },
+    'initscripts-service': { v: '10.11.6-1', size: 0.1, base: true, desc: 'Support for the service command', cmds: ['service'] },
     'iproute': { v: '6.2.0-6', size: 2.2, base: true, desc: 'Advanced IP routing and network device configuration tools', cmds: ['ip', 'ss'] },
     'iputils': { v: '20210202-9', size: 0.4, base: true, desc: 'Network monitoring tools including ping', cmds: ['ping', 'tracepath'] },
     'curl': { v: '7.76.1-29', size: 0.7, base: true, desc: 'A utility for getting files from remote servers (FTP, HTTP, and others)', cmds: ['curl'] },
@@ -63,7 +65,7 @@
     'cronie': { v: '1.5.7-11', size: 0.3, base: true, desc: 'Cron daemon for executing programs at set times', cmds: ['crontab'], service: 'crond' },
     'dnf': { v: '4.14.0-9', size: 2.2, base: true, desc: 'Package manager', cmds: ['dnf', 'yum'] },
     'rpm': { v: '4.16.1.3-29', size: 3.0, base: true, desc: 'The RPM package management system', cmds: ['rpm'] },
-    'vim-minimal': { v: '8.2.2637-20', size: 1.4, base: true, desc: 'A minimal version of the VIM editor', cmds: ['vi'] },
+    'vim-minimal': { v: '8.2.2637-20', size: 1.4, base: true, desc: 'A minimal version of the VIM editor', cmds: ['vi', 'view'] },
     'which': { v: '2.21-29', size: 0.1, base: true, desc: 'Displays where a particular program in your path is located', cmds: ['which'] },
     'file': { v: '5.39-16', size: 0.1, base: true, desc: 'Utility for determining file types', cmds: ['file'] },
     'man-db': { v: '2.9.3-7', size: 2.8, base: true, desc: 'Tools for searching and reading man pages', cmds: ['man'] },
@@ -264,7 +266,7 @@
     const per = Math.max(20000, Math.round(pkg.size * 1024 * 1024 / Math.max(1, (pkg.cmds || []).length || 1)));
     for (const c of pkg.cmds || []) {
       if (L.cmds && Object.keys(L.cmds).length && !L.cmds[c] && !(L.builtins && L.builtins[c])) continue;
-      const dir = /^(useradd|userdel|usermod|groupadd|groupdel|visudo|reboot|poweroff|shutdown|halt|ifconfig|route|arp|firewalld)$/.test(c) ? '/usr/sbin' : '/usr/bin';
+      const dir = /^(useradd|adduser|userdel|usermod|groupadd|groupdel|visudo|alternatives|update-alternatives|service|reboot|poweroff|shutdown|halt|ifconfig|route|arp|firewalld)$/.test(c) ? '/usr/sbin' : '/usr/bin';
       const p = dir + '/' + c;
       if (vfs.exists(p)) continue;
       vfs.write(p, '\x7fELF', { mode: c === 'sudo' ? 0o4111 : c === 'passwd' || c === 'su' ? 0o4755 : 0o755, vsize: per, bin: true });

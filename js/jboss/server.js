@@ -615,17 +615,19 @@
         const isDir = node.t === 'd';
         if (has(name + '.skipdeploy')) continue;
         let dep = this.deployments.get(name);
+        if (dep && dep.managed) continue;
+        // .deployed eliminado por el usuario -> undeploy (y marcador .undeployed)
+        if (dep && dep.scanner && dep.status === 'OK' && !has(name + '.deployed') && !has(name + '.dodeploy') && !has(name + '.isdeploying')) {
+          this.undeployNow(dep, thread);
+          this.deployments.delete(name);
+          mark(name, '.undeployed');
+          continue;
+        }
         const want = has(name + '.dodeploy') || (!isDir && cfg.autoZipped && !has(name + '.deployed') && !has(name + '.failed') && !has(name + '.undeployed')) ||
           (isDir && cfg.autoExploded && !has(name + '.deployed') && !has(name + '.failed'));
         const updated = dep && dep.scanner && dep.status === 'OK' && !isDir && node.mt > (dep.deployedAt || 0) + 10;
-        if (dep && dep.managed) continue;
         if (!want && !updated) {
-          // .deployed eliminado -> undeploy
-          if (dep && dep.scanner && dep.status === 'OK' && !has(name + '.deployed')) {
-            this.undeployNow(dep, thread);
-            this.deployments.delete(name);
-            mark(name, '.undeployed');
-          } else if (!dep && has(name + '.deployed') && boot) {
+          if (!dep && has(name + '.deployed') && boot) {
             // tras reinicio: redeploy de lo marcado como desplegado
             dep = { name, runtimeName: name, file: path, scanner: true, enabled: true, status: 'STOPPED' };
             this.deployments.set(name, dep);
