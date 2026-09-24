@@ -24,8 +24,14 @@
     conf: (vm) => { const hm = Q.home(vm); return hm ? Q.read(vm, hm + '/bin/standalone.conf') : ''; },
     xml: (vm) => { const hm = Q.home(vm); try { return X.parse(Q.read(vm, hm + '/standalone/configuration/standalone.xml')); } catch (e) { return null; } },
     home1: (vm) => (OS.users.passwd(vm.fs).find(u => u.uid === 1000) || { home: '/home/admin' }).home,
-    user1: (vm) => (OS.users.passwd(vm.fs).find(u => u.uid === 1000) || { name: 'admin' }).name
+    user1: (vm) => (OS.users.passwd(vm.fs).find(u => u.uid === 1000) || { name: 'admin' }).name,
+    ctx: (vm, p) => (L.selinux.contextOf(vm.fs, p).split(':')[2] || '')
   };
+  const pemCert = (vm, p) => L.certs.readPem(Q.read(vm, p), 'CERTIFICATE')[0] || null;
+  const cn = (dn) => ((dn || []).find(x => x[0] === 'CN') || [])[1];
+  const ks = (vm, p, pass) => { const k = L.certs.readKs(Q.read(vm, p)); return k && k.pass === L.util.sha256('ks:' + pass) ? k : null; };
+  const json = (vm, p) => { try { return JSON.parse(Q.read(vm, p)); } catch (e) { return null; } };
+  const lines = (vm, p) => Q.read(vm, p).split('\n').filter(x => x.trim());
 
   const EX = [
     {
@@ -383,8 +389,129 @@
         ['Consulta server-state con jboss-cli', (vm) => /jboss-cli\.sh[\s\S]*server-state/.test(Q.read(vm, '/usr/local/bin/check-jboss.sh'))],
         ['/tmp/estado.txt indica OK', (vm) => /\bOK\b/.test(Q.read(vm, '/tmp/estado.txt'))]
       ]
+    },
+
+    // ---------- SELinux ----------
+    {
+      id: 'selinux-servicio', level: 'a', cat: 'SELinux', title: 'Servicio bloqueado por SELinux (203/EXEC)',
+      goal: 'Reproduce un error muy común en producción: descomprime en <code>/root/jb</code> el ZIP de JBoss que tengas en <code>/opt/installers</code>, mueve la carpeta resultante con <code>mv</code> a <code>/opt/jboss-se</code> y crea el servicio <code>jboss-se.service</code> (User=jboss). Al arrancarlo, systemd fallará con <b>status=203/EXEC</b> aunque los permisos sean correctos. Guarda la denegación AVC en <code>/tmp/avc.txt</code>, corrige las etiquetas y deja el servicio activo.',
+      hints: ['<code>sudo unzip -q /opt/installers/&lt;zip&gt; -d /root/jb</code> y luego <code>sudo mv /root/jb/* /opt/jboss-se</code>', '<code>mv</code> conserva el contexto SELinux de origen (<code>admin_home_t</code>); <code>cp</code> toma el del destino. Compáralo con <code>ls -Z</code>.', '<code>sudo ausearch -m avc -ts recent</code> muestra la denegación <code>denied { execute }</code>.', '<code>sudo restorecon -Rv /opt/jboss-se</code> aplica el contexto por defecto de la ruta (<code>usr_t</code>). No desactives SELinux: corrige la etiqueta.', 'Si ya hay otro JBoss corriendo, agrega <code>-Djboss.socket.binding.port-offset=100</code> al ExecStart.'],
+      solution: 'ZIP=$(ls /opt/installers/*.zip | head -1)\nsudo unzip -q $ZIP -d /root/jb\nsudo mv /root/jb/* /opt/jboss-se\nsudo chown -R jboss:jboss /opt/jboss-se\nsudo tee /etc/systemd/system/jboss-se.service <<EOF\n[Unit]\nDescription=JBoss (ejercicio SELinux)\nAfter=network.target\n\n[Service]\nUser=jboss\nExecStart=/opt/jboss-se/bin/standalone.sh -b 0.0.0.0 -Djboss.socket.binding.port-offset=100\n\n[Install]\nWantedBy=multi-user.target\nEOF\nsudo systemctl daemon-reload\nsudo systemctl start jboss-se        # falla: status=203/EXEC\nsudo journalctl -u jboss-se | tail -3\nls -Z /opt/jboss-se/bin/standalone.sh  # admin_home_t\nsudo ausearch -m avc > /tmp/avc.txt\nsudo restorecon -Rv /opt/jboss-se\nsudo systemctl start jboss-se\nsystemctl status jboss-se',
+      checks: [
+        ['/tmp/avc.txt contiene la denegación (denied … admin_home_t)', (vm) => /denied[\s\S]*admin_home_t/.test(Q.read(vm, '/tmp/avc.txt'))],
+        ['/opt/jboss-se/bin/standalone.sh tiene el tipo usr_t', (vm) => vm.fs.exists('/opt/jboss-se/bin/standalone.sh') && Q.ctx(vm, '/opt/jboss-se/bin/standalone.sh') === 'usr_t'],
+        ['SELinux sigue en Enforcing', (vm) => L.selinux.selinuxMode(vm) === 'enforcing'],
+        ['jboss-se.service está activo', (vm) => vm.fs.isFile('/etc/systemd/system/jboss-se.service') && vm.unitState('jboss-se').active]
+      ]
+    },
+    {
+      id: 'selinux-etiquetas', level: 'i', cat: 'SELinux', title: 'Contextos SELinux: cp, mv, chcon y restorecon',
+      goal: 'Guarda la salida de <code>sestatus</code> en <code>/tmp/sestatus.txt</code>. Crea en <code>/root</code> los archivos <code>a.txt</code> y <code>b.txt</code>: <b>copia</b> a.txt a <code>/opt/demo-cp.txt</code> y <b>mueve</b> b.txt a <code>/opt/demo-mv.txt</code>. Guarda <code>ls -Z /opt/demo-*</code> en <code>/tmp/contextos.txt</code> y corrige el archivo mal etiquetado. Por último cambia <u>temporalmente</u> el tipo de <code>/opt/demo-cp.txt</code> a <b>httpd_sys_content_t</b> con <code>chcon</code>.',
+      hints: ['<code>sestatus</code> muestra el modo actual y el de <code>/etc/selinux/config</code>.', 'Tras el <code>mv</code>, <code>demo-mv.txt</code> conserva <code>admin_home_t</code>; <code>demo-cp.txt</code> queda como <code>usr_t</code>.', '<code>restorecon -v /opt/demo-mv.txt</code> corrige la etiqueta.', '<code>chcon -t httpd_sys_content_t /opt/demo-cp.txt</code>. Un <code>restorecon</code> posterior lo revertiría: para cambios permanentes se usa <code>semanage fcontext</code>.'],
+      solution: 'sestatus > /tmp/sestatus.txt\nsudo touch /root/a.txt /root/b.txt\nsudo cp /root/a.txt /opt/demo-cp.txt\nsudo mv /root/b.txt /opt/demo-mv.txt\nls -Z /opt/demo-* > /tmp/contextos.txt; cat /tmp/contextos.txt\nsudo restorecon -v /opt/demo-mv.txt\nsudo chcon -t httpd_sys_content_t /opt/demo-cp.txt\nls -Z /opt/demo-*',
+      checks: [
+        ['/tmp/sestatus.txt muestra el estado de SELinux', (vm) => /SELinux status:\s+enabled/.test(Q.read(vm, '/tmp/sestatus.txt'))],
+        ['/tmp/contextos.txt registra admin_home_t en demo-mv.txt', (vm) => /admin_home_t\S*\s+\S*demo-mv\.txt/.test(Q.read(vm, '/tmp/contextos.txt'))],
+        ['/opt/demo-mv.txt quedó corregido (usr_t)', (vm) => vm.fs.exists('/opt/demo-mv.txt') && Q.ctx(vm, '/opt/demo-mv.txt') === 'usr_t'],
+        ['/opt/demo-cp.txt tiene el tipo httpd_sys_content_t', (vm) => vm.fs.exists('/opt/demo-cp.txt') && Q.ctx(vm, '/opt/demo-cp.txt') === 'httpd_sys_content_t']
+      ]
+    },
+
+    // ---------- Certificados ----------
+    {
+      id: 'ca-propia', level: 'a', cat: 'Certificados', title: 'CA propia y certificado firmado',
+      goal: 'En <code>/root/pki</code> crea una autoridad certificadora (<code>ca.key</code>, <code>ca.pem</code> con CN <b>Lab CA</b>) y un certificado para el nombre completo de la VM (<code>hostname -f</code>): <code>app.key</code>, <code>app.csr</code> y <code>app.pem</code>, firmado por tu CA. Guarda el resultado de <code>openssl verify</code> en <code>/root/pki/verify.txt</code>.',
+      hints: ['CA: <code>openssl genrsa -out ca.key 4096</code> y <code>openssl req -x509 -new -key ca.key -out ca.pem -days 3650 -subj "/O=Lab/CN=Lab CA"</code>', 'Solicitud: <code>openssl req -new -newkey rsa:2048 -nodes -keyout app.key -out app.csr -subj "/CN=$(hostname -f)"</code>', 'Firma: <code>openssl x509 -req -in app.csr -CA ca.pem -CAkey ca.key -out app.pem -days 365</code>', 'Revisa con <code>openssl x509 -in app.pem -noout -subject -issuer -dates</code>.'],
+      solution: 'sudo -i\nmkdir -p /root/pki && cd /root/pki\nopenssl genrsa -out ca.key 4096\nopenssl req -x509 -new -key ca.key -out ca.pem -days 3650 -subj "/O=Lab/CN=Lab CA"\nopenssl req -new -newkey rsa:2048 -nodes -keyout app.key -out app.csr -subj "/CN=$(hostname -f)"\nopenssl x509 -req -in app.csr -CA ca.pem -CAkey ca.key -out app.pem -days 365\nopenssl verify -CAfile ca.pem app.pem > verify.txt; cat verify.txt',
+      checks: [
+        ['ca.pem es un certificado de CA con CN=Lab CA', (vm) => { const c = pemCert(vm, '/root/pki/ca.pem'); return !!c && cn(c.subject) === 'Lab CA' && cn(c.issuer) === 'Lab CA'; }],
+        ['app.pem es para el nombre de la VM', (vm) => { const c = pemCert(vm, '/root/pki/app.pem'); return !!c && [vm.hostname, vm.hostname.split('.')[0]].includes(cn(c.subject)); }],
+        ['app.pem está firmado por la CA', (vm) => { const a = pemCert(vm, '/root/pki/app.pem'), ca = pemCert(vm, '/root/pki/ca.pem'); return !!a && !!ca && a.signerKeyId === ca.keyId && cn(a.issuer) === 'Lab CA'; }],
+        ['verify.txt indica app.pem: OK', (vm) => /app\.pem: OK/.test(Q.read(vm, '/root/pki/verify.txt'))]
+      ]
+    },
+    {
+      id: 'keystore', level: 'a', cat: 'Certificados', title: 'Keystore y truststore PKCS12',
+      goal: 'Continúa el ejercicio anterior. Empaqueta <code>app.pem</code> + <code>app.key</code> en <code>/root/pki/app.p12</code> con alias <b>jboss</b> y contraseña <b>cambiame</b>. Crea el truststore <code>/root/pki/truststore.p12</code> (misma contraseña) con la CA importada como <b>labca</b>. Con JBoss corriendo, guarda en <code>/tmp/tls.txt</code> el certificado que presenta el puerto <b>8443</b>.',
+      hints: ['<code>openssl pkcs12 -export -in app.pem -inkey app.key -name jboss -out app.p12 -passout pass:cambiame</code>', '<code>keytool -importcert -alias labca -file ca.pem -keystore truststore.p12 -storepass cambiame -noprompt</code>', 'Confirma con <code>keytool -list -v -keystore app.p12 -storepass cambiame</code>.', '<code>keytool -printcert -sslserver localhost:8443</code> o <code>openssl s_client -connect localhost:8443 &lt; /dev/null</code>'],
+      solution: 'sudo -i\ncd /root/pki\nopenssl pkcs12 -export -in app.pem -inkey app.key -name jboss -out app.p12 -passout pass:cambiame\nkeytool -list -keystore app.p12 -storepass cambiame\nkeytool -importcert -alias labca -file ca.pem -keystore truststore.p12 -storepass cambiame -noprompt\nkeytool -printcert -sslserver localhost:8443 > /tmp/tls.txt; head /tmp/tls.txt',
+      checks: [
+        ['app.p12 (contraseña cambiame) tiene la clave privada "jboss"', (vm) => { const k = ks(vm, '/root/pki/app.p12', 'cambiame'); return !!k && k.entries.some(e => e.alias === 'jboss' && e.kind === 'PrivateKeyEntry'); }],
+        ['La entrada jboss contiene app.pem', (vm) => { const k = ks(vm, '/root/pki/app.p12', 'cambiame'), a = pemCert(vm, '/root/pki/app.pem'); return !!k && !!a && k.entries.some(e => e.alias === 'jboss' && e.cert.serial === a.serial); }],
+        ['truststore.p12 confía en la CA como labca', (vm) => { const k = ks(vm, '/root/pki/truststore.p12', 'cambiame'), ca = pemCert(vm, '/root/pki/ca.pem'); return !!k && !!ca && k.entries.some(e => e.alias === 'labca' && e.kind === 'trustedCertEntry' && e.cert.serial === ca.serial); }],
+        ['/tmp/tls.txt muestra el certificado del puerto 8443', (vm) => /Owner: CN=localhost|subject=CN = localhost|s:CN = localhost/.test(Q.read(vm, '/tmp/tls.txt'))]
+      ]
+    },
+
+    // ---------- Datos y API ----------
+    {
+      id: 'api-jq', level: 'i', cat: 'Datos y API', title: 'Estado por la API HTTP de gestión con jq',
+      goal: 'Sin usar jboss-cli, consulta la <b>API HTTP de gestión</b> (puerto 9990, autenticación Digest) y genera <code>/tmp/estado.json</code> con la forma <code>{"estado": "running", "despliegues": ["hello.war", …]}</code>. Despliega antes al menos una aplicación. Necesitas un usuario de gestión (add-user.sh) y el paquete <b>jq</b>.',
+      hints: ['<code>sudo dnf install -y jq</code>', 'GET: <code>curl -s --digest -u admin:Admin#123 "http://localhost:9990/management?operation=attribute&amp;name=server-state"</code>', 'POST: <code>curl -s --digest -u admin:Admin#123 -H "Content-Type: application/json" -d \'{"operation":"read-children-names","child-type":"deployment"}\' http://localhost:9990/management | jq .result</code>', 'Une ambos con <code>jq -n --arg e "$E" --argjson d "$D" \'{estado: $e, despliegues: $d}\'</code>, o con <code>jq -n "{estado: …}"</code>.'],
+      solution: 'sudo dnf install -y jq\nsudo -u jboss cp /opt/installers/apps/hello.war /opt/jboss/standalone/deployments/\nU="admin:Admin#123"\nE=$(curl -s --digest -u $U "http://localhost:9990/management?operation=attribute&name=server-state" | jq -r .)\nD=$(curl -s --digest -u $U -d \'{"operation":"read-children-names","child-type":"deployment"}\' http://localhost:9990/management | jq -c .result)\njq -n --arg e "$E" --argjson d "$D" \'{estado: $e, despliegues: $d}\' > /tmp/estado.json\ncat /tmp/estado.json',
+      checks: [
+        ['/tmp/estado.json es JSON válido', (vm) => !!json(vm, '/tmp/estado.json')],
+        ['estado = "running"', (vm) => { const j = json(vm, '/tmp/estado.json'); return !!j && j.estado === 'running'; }],
+        ['despliegues coincide con lo desplegado en el servidor', (vm) => { const j = json(vm, '/tmp/estado.json'); if (!j || !Array.isArray(j.despliegues) || !j.despliegues.length) return false; return j.despliegues.every(n => deps(vm, n).length > 0); }]
+      ]
+    },
+    {
+      id: 'xmllint-puertos', level: 'i', cat: 'Datos y API', title: 'Puertos de standalone.xml con xmllint',
+      goal: 'Usa <code>xmllint --xpath</code> sobre <code>standalone.xml</code> para: (1) guardar en <code>/tmp/puertos.txt</code> el atributo <b>port</b> de <u>todos</u> los <code>socket-binding</code>; (2) guardar en <code>/tmp/http-port.txt</code> <u>solo</u> el valor del puerto del binding <b>http</b>. Antes comprueba que el XML está bien formado con <code>--noout</code>.',
+      hints: ['Prueba primero <code>xmllint --xpath "//socket-binding" standalone.xml</code>: responde <i>XPath set is empty</i> porque el documento usa un <b>namespace por defecto</b>.', 'Ignora el namespace con <code>local-name()</code>: <code>//*[local-name()=\'socket-binding\']/@port</code>', 'Para el valor sin <code>port="…"</code> usa <code>string(…)</code>: <code>string(//*[local-name()=\'socket-binding\'][@name=\'http\']/@port)</code>'],
+      solution: 'cd /opt/jboss/standalone/configuration\nxmllint --noout standalone.xml && echo "XML bien formado"\nxmllint --xpath "//socket-binding" standalone.xml        # XPath set is empty\nxmllint --xpath "//*[local-name()=\'socket-binding\']/@port" standalone.xml > /tmp/puertos.txt\nxmllint --xpath "string(//*[local-name()=\'socket-binding\'][@name=\'http\']/@port)" standalone.xml > /tmp/http-port.txt\ncat /tmp/puertos.txt /tmp/http-port.txt',
+      checks: [
+        ['/tmp/puertos.txt contiene los puertos http, https y management', (vm) => { const t = Q.read(vm, '/tmp/puertos.txt'); return /port="\$\{jboss\.http\.port:8080\}"/.test(t) && /8443/.test(t) && /9990/.test(t); }],
+        ['/tmp/http-port.txt contiene solo el valor del puerto http', (vm) => Q.read(vm, '/tmp/http-port.txt').trim() === '${jboss.http.port:8080}']
+      ]
+    },
+    {
+      id: 'analisis-log', level: 'b', cat: 'Datos y API', title: 'Códigos WFLY más frecuentes en server.log',
+      goal: 'Genera <code>/tmp/codigos.txt</code> con los códigos de mensaje de JBoss (<code>WFLYSRV0025</code>, <code>WFLYUT0006</code>…) que aparecen en <code>server.log</code>, contados y ordenados de mayor a menor (formato de <code>uniq -c</code>). Guarda también en <code>/tmp/niveles.txt</code> una tabla alineada con <code>column -t</code> del número de líneas por nivel (INFO, WARN, ERROR).',
+      hints: ['<code>grep -o</code> imprime solo la parte que coincide: <code>grep -oE "WFLY[A-Z]+[0-9]{4}" server.log</code>', 'Cadena clásica: <code>| sort | uniq -c | sort -rn</code>', 'El nivel es la tercera columna: <code>awk \'{print $3}\' server.log | sort | uniq -c | column -t</code>'],
+      solution: 'cd /opt/jboss/standalone/log\ngrep -oE "WFLY[A-Z]+[0-9]{4}" server.log | sort | uniq -c | sort -rn > /tmp/codigos.txt\nhead /tmp/codigos.txt\nawk \'$3 ~ /^(INFO|WARN|ERROR)$/ {print $3}\' server.log | sort | uniq -c | column -t > /tmp/niveles.txt\ncat /tmp/niveles.txt',
+      checks: [
+        ['/tmp/codigos.txt tiene formato "N WFLYxxx####" (3+ líneas)', (vm) => { const l = lines(vm, '/tmp/codigos.txt'); return l.length >= 3 && l.every(x => /^\s*\d+\s+WFLY[A-Z]+\d{4}$/.test(x)); }],
+        ['Está ordenado de mayor a menor', (vm) => { const n = lines(vm, '/tmp/codigos.txt').map(x => parseInt(x, 10)); return n.length >= 3 && n.every((v, i) => !i || n[i - 1] >= v); }],
+        ['Incluye WFLYSRV0025 (arranque completo)', (vm) => /\bWFLYSRV0025\b/.test(Q.read(vm, '/tmp/codigos.txt'))],
+        ['/tmp/niveles.txt cuenta las líneas INFO', (vm) => /^\d+\s+INFO\s*$/m.test(Q.read(vm, '/tmp/niveles.txt'))]
+      ]
+    },
+
+    // ---------- Sistema ----------
+    {
+      id: 'logrotate-consola', level: 'i', cat: 'Sistema', title: 'Rotar console.log con logrotate',
+      goal: 'JBoss rota <code>server.log</code> por sí mismo, pero la salida de consola que rediriges con nohup crece sin límite. Arranca JBoss enviando la salida a <code>/var/log/jboss/console.log</code> y crea <code>/etc/logrotate.d/jboss</code> para ese archivo: <b>daily</b>, <b>rotate 7</b>, <b>compress</b>, <b>missingok</b> y <b>copytruncate</b>. Fuerza una rotación y comprueba que se generó <code>console.log.1.gz</code>.',
+      hints: ['<code>sudo mkdir -p /var/log/jboss &amp;&amp; sudo chown jboss:jboss /var/log/jboss</code>', '<code>copytruncate</code> es necesario porque java mantiene el archivo abierto: logrotate copia y luego vacía el original.', 'Prueba sin cambiar nada con <code>logrotate -d /etc/logrotate.d/jboss</code> y fuerza con <code>-f</code>.', 'El estado se guarda en <code>/var/lib/logrotate/logrotate.status</code>.'],
+      solution: 'sudo mkdir -p /var/log/jboss && sudo chown jboss:jboss /var/log/jboss\nsudo -u jboss nohup /opt/jboss/bin/standalone.sh -b 0.0.0.0 > /var/log/jboss/console.log 2>&1 &\nsudo tee /etc/logrotate.d/jboss <<EOF\n/var/log/jboss/console.log {\n    daily\n    rotate 7\n    compress\n    missingok\n    copytruncate\n}\nEOF\nsudo logrotate -d /etc/logrotate.d/jboss\nsudo logrotate -f /etc/logrotate.d/jboss\nls -l /var/log/jboss/',
+      checks: [
+        ['/etc/logrotate.d/jboss rota /var/log/jboss/console.log', (vm) => /\/var\/log\/jboss\/console\.log[^{]*\{/.test(Q.read(vm, '/etc/logrotate.d/jboss'))],
+        ['Incluye daily, rotate 7, compress, missingok y copytruncate', (vm) => { const t = Q.read(vm, '/etc/logrotate.d/jboss'); return ['daily', 'rotate\\s+7', 'compress', 'missingok', 'copytruncate'].every(d => new RegExp('^\\s*' + d + '\\s*$', 'm').test(t)); }],
+        ['Existe console.log.1.gz y console.log sigue presente', (vm) => vm.fs.isFile('/var/log/jboss/console.log.1.gz') && vm.fs.isFile('/var/log/jboss/console.log')]
+      ]
+    },
+    {
+      id: 'sysctl-jboss', level: 'i', cat: 'Sistema', title: 'Parámetros de kernel persistentes',
+      goal: 'Ajusta el kernel para un servidor de aplicaciones: <b>net.core.somaxconn = 8192</b>, <b>net.ipv4.tcp_keepalive_time = 600</b> y <b>vm.swappiness = 10</b>. Deben quedar <u>persistentes</u> en <code>/etc/sysctl.d/90-jboss.conf</code> y <u>aplicados</u> en el sistema en ejecución sin reiniciar.',
+      hints: ['<code>sysctl -w</code> cambia el valor en caliente, pero se pierde al reiniciar.', 'Formato del archivo: una línea <code>clave = valor</code> por parámetro.', '<code>sudo sysctl -p /etc/sysctl.d/90-jboss.conf</code> o <code>sudo sysctl --system</code> aplica los archivos.', 'Comprueba con <code>sysctl net.core.somaxconn vm.swappiness</code> o <code>cat /proc/sys/vm/swappiness</code>.'],
+      solution: 'sudo tee /etc/sysctl.d/90-jboss.conf <<EOF\nnet.core.somaxconn = 8192\nnet.ipv4.tcp_keepalive_time = 600\nvm.swappiness = 10\nEOF\nsudo sysctl --system\nsysctl net.core.somaxconn net.ipv4.tcp_keepalive_time vm.swappiness',
+      checks: [
+        ['/etc/sysctl.d/90-jboss.conf define los 3 parámetros', (vm) => { const t = Q.read(vm, '/etc/sysctl.d/90-jboss.conf'); return /^\s*net\.core\.somaxconn\s*=\s*8192\s*$/m.test(t) && /^\s*net\.ipv4\.tcp_keepalive_time\s*=\s*600\s*$/m.test(t) && /^\s*vm\.swappiness\s*=\s*10\s*$/m.test(t); }],
+        ['Valores aplicados en el sistema en ejecución', (vm) => { const s = vm.sysctl; return !!s && vm.sysctlBoot === vm.bootTime && s['net.core.somaxconn'] === '8192' && s['net.ipv4.tcp_keepalive_time'] === '600' && s['vm.swappiness'] === '10'; }]
+      ]
+    },
+    {
+      id: 'prioridad', level: 'b', cat: 'Sistema', title: 'Prioridad de procesos con nice y renice',
+      goal: 'Simula una tarea batch que no debe quitarle CPU a JBoss: lánzala en segundo plano con <code>nice -n 10 sleep 3600 &amp;</code>. Después bájale aún más la prioridad a <b>19</b> con <code>renice</code> y guarda en <code>/tmp/prioridad.txt</code> la salida de <code>ps -o pid,ni,comm -p PID</code>.',
+      hints: ['<code>$!</code> contiene el PID del último proceso lanzado en segundo plano.', 'Valores de nice: -20 (más prioridad) a 19 (menos). Un usuario normal solo puede <b>subir</b> su nice; bajarlo requiere root.', 'En <code>top</code> la columna <b>NI</b> muestra el valor.'],
+      solution: 'nice -n 10 sleep 3600 &\nPID=$!\nps -o pid,ni,comm -p $PID\nrenice -n 19 -p $PID\nps -o pid,ni,comm -p $PID > /tmp/prioridad.txt\ncat /tmp/prioridad.txt',
+      checks: [
+        ['Hay un proceso sleep en ejecución con nice 19', (vm) => [...vm.procs.values()].some(p => p.name === 'sleep' && p.ni === 19)],
+        ['/tmp/prioridad.txt muestra PID, NI=19 y sleep', (vm) => /^\s*(\d+)\s+19\s+sleep\s*$/m.test(Q.read(vm, '/tmp/prioridad.txt')) && /\bNI\b/.test(Q.read(vm, '/tmp/prioridad.txt'))]
+      ]
     }
   );
+
 
   L.exercises = EX;
   L.exercisesQ = Q;

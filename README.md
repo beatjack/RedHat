@@ -23,7 +23,7 @@ No requiere instalar nada ni conexión a Internet: todas las dependencias están
 | **Consola JBoss** | Consola web estilo HAL: despliegues, datasources, propiedades, socket bindings, interfaces, logging, JVM, logs en vivo |
 | **Navegador** | Ver las apps desplegadas en `http://<IP-VM>:8080/…` respetando bind address y firewall |
 | **Monitor** | Gráficas de CPU/RAM por VM, procesos y puertos |
-| **Ejercicios** | 34 retos progresivos (básico → avanzado) con **verificación automática**, pistas y solución: instalación, despliegues, CLI, troubleshooting (XML roto, puertos ocupados, Java incompatible, permisos), operación (respaldos, thread dumps, JDR, scripts de monitoreo) |
+| **Ejercicios** | 44 retos progresivos (básico → avanzado) con **verificación automática**, pistas y solución: instalación, despliegues, CLI, troubleshooting (XML roto, puertos ocupados, Java incompatible, permisos), operación (respaldos, thread dumps, JDR, scripts de monitoreo), SELinux (203/EXEC y `restorecon`), certificados (CA propia, keystore/truststore), datos (API de gestión con `jq`, XPath con `xmllint`, análisis de logs) y sistema (`logrotate`, `sysctl`, `nice`/`renice`) |
 | **Linux real (v86)** | Emulador x86 con kernel Linux verdadero desde una ISO/bzImage de tu equipo |
 | **Guía** | Arquitectura, primeros pasos y atajos |
 
@@ -99,7 +99,7 @@ docs/                   notas de fidelidad y licencias
 
 ```bash
 node test/run-tests.js         # motor: 13 grupos de pruebas
-node test/exercises-tests.js   # resuelve y verifica los ejercicios de JBoss adicionales
+node test/exercises-tests.js   # resuelve y verifica 24 ejercicios (JBoss, SELinux, certificados, datos y sistema)
 node test/commands-tests.js    # comandos de texto/datos, SELinux, sistema, builtins, openssl/keytool y API de gestión
 ```
 
