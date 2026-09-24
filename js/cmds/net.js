@@ -116,7 +116,7 @@
     let target = url;
     let res;
     for (let hops = 0; hops < 5; hops++) {
-      res = c.vm.lab.http(c.vm, target, { method: opts.X || (opts.I ? 'HEAD' : opts.d ? 'POST' : 'GET'), auth });
+      res = c.vm.lab.http(c.vm, target, { method: opts.X || (opts.I ? 'HEAD' : opts.d ? 'POST' : 'GET'), auth, data: opts.d && opts.d.startsWith('@') ? c.fs.read(c.resolve(opts.d.slice(1)), c.cred) : opts.d });
       if (opts.v) { c.err('*   Trying ' + (res.ip || m[2]) + ':' + (m[3] || 80) + '...\n'); }
       if (!res.ok) {
         if (!opts.s || opts.S) c.err(connErr(c, 'curl', m[2], +(m[3] || (m[1] === 'https' ? 443 : 80)), res) + '\n');

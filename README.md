@@ -27,9 +27,19 @@ No requiere instalar nada ni conexión a Internet: todas las dependencias están
 | **Linux real (v86)** | Emulador x86 con kernel Linux verdadero desde una ISO/bzImage de tu equipo |
 | **Guía** | Arquitectura, primeros pasos y atajos |
 
-### Comandos disponibles (≈180)
+### Comandos disponibles (≈260: 210 programas + 53 builtins)
 
-`ls cd cp mv rm mkdir find grep sed awk sort uniq cut tr wc tee xargs diff tar zip unzip gzip jar chmod chown ln stat du df tree vi nano less ps top kill pkill pgrep free uptime uname lscpu lsblk dmesg vmstat useradd usermod groupadd passwd su sudo systemctl journalctl crontab ip ss netstat ping curl wget ssh scp ssh-keygen ssh-copy-id nc telnet nslookup dig firewall-cmd dnf yum rpm alternatives java jps jstack jcmd jmap keytool man help …`
+| Grupo | Comandos |
+|---|---|
+| Archivos | `ls (-Z) cd cp mv rm mkdir find stat (-c) du df tree truncate ln chmod chown locate updatedb whereis` |
+| Texto y datos | `grep sed awk sort uniq cut tr wc tee xargs diff column comm fold shuf strings xxd od hexdump envsubst zgrep zless jq xmllint` |
+| Sistema | `ps top kill pkill nice renice free uptime vmstat sysctl getent logrotate systemctl journalctl crontab useradd sudo dnf rpm …` |
+| SELinux | `getenforce setenforce sestatus chcon restorecon ausearch id -Z ls -Z ps -Z` |
+| Red | `ip ss ping curl wget ssh scp nc nslookup dig nmcli traceroute firewall-cmd` |
+| Java y certificados | `java jps jstack jcmd jmap jstat jinfo keytool openssl` (`req`, `x509`, `verify`, `pkcs12`, `s_client`) |
+| Builtins de bash | `cd echo export read test type hash time pushd popd dirs alias history …` |
+
+Algunos vienen en paquetes opcionales, como en un RHEL mínimo: `dnf install jq vim-enhanced binutils plocate traceroute`.
 
 JBoss: `standalone.sh` (con `-c`, `-b`, `-bmanagement`, `-D…`, `port-offset`, `jboss.server.base.dir`), `jboss-cli.sh` (interactivo y `--command`/`--file`; `cd`, `ls`, operaciones DMR, `deploy`, `undeploy`, `deployment-info`, `module add`, `reload`, `shutdown`, `embed-server`, `batch`), `add-user.sh`, `jdr.sh`.
 
@@ -57,6 +67,9 @@ Después abre el **Navegador** del escritorio en `http://10.0.0.11:8080/hello/`.
 - **Permisos**: rwx, dueño/grupo, sticky bit, `sudo` solo para `wheel`, `/etc/passwd`, `/etc/group` y `/etc/shadow` reales dentro de la VM.
 - **Red**: 10.0.0.0/24 entre VMs; `-b 127.0.0.1` (por defecto) impide el acceso remoto; firewalld distingue reglas *runtime* y *--permanent*.
 - **JBoss**: lee `standalone.conf` y `standalone*.xml` (si el XML está mal formado, falla con `WFLYCTL0085`), abre los puertos de `socket-binding-group` + `port-offset`, detecta conflictos (`Address already in use`), escribe `server.log`, maneja el *deployment-scanner* con marcadores `.deployed/.failed/.dodeploy`, datasources, drivers/módulos y despliegues administrados; la CLI y la consola modifican el XML como el controlador real (con `reload-required` cuando corresponde).
+- **SELinux**: *Enforcing* por defecto con contextos por ruta. `mv` conserva la etiqueta de origen: si mueves JBoss desde `/root` (`admin_home_t`), systemd falla con `status=203/EXEC` y `ausearch -m avc` muestra la denegación hasta que ejecutas `restorecon -Rv`.
+- **Certificados**: `openssl` y `keytool` comparten formato (PEM ↔ PKCS12), así que puedes crear una CA, firmar CSRs, importar el resultado en un keystore e inspeccionar el `https-listener` (8443) con `openssl s_client` o `keytool -printcert -sslserver`. Las claves son simuladas (no sirven fuera del laboratorio).
+- **API HTTP de gestión**: `curl --digest -u admin:… http://localhost:9990/management/...` responde JSON (GET con `operation=attribute|resource` y POST con operaciones DMR), ideal para combinar con `jq`.
 - **Persistencia**: los discos de las VMs se guardan en IndexedDB de tu navegador. Al recargar, las VMs que estaban encendidas se “reinician” y JBoss se restaura.
 
 Consulta [`docs/FIDELIDAD.md`](docs/FIDELIDAD.md) para ver qué datos están verificados contra fuentes oficiales y cuáles son aproximados.
@@ -74,11 +87,11 @@ js/core/                util, XML, sistema de archivos virtual, archivos empaque
 js/os/system.js         distribuciones, usuarios, paquetes dnf, imagen base
 js/jboss/               distribuciones EAP/WildFly, runtime del servidor, modelo de gestión (DMR)
 js/shell/               lexer/parser bash, intérprete, terminal/readline
-js/cmds/                comandos (archivos, texto, sistema, red, paquetes, JBoss, editores, manual)
+js/cmds/                comandos (archivos, texto, sistema, red, paquetes, JBoss, editores, texto y datos, SELinux/sysadmin, certificados, manual)
 js/exercises/           catálogo de ejercicios y verificaciones
 js/ui/                  gestor de ventanas y aplicaciones del escritorio
 vendor/                 xterm.js (MIT), v86 (BSD-2-Clause) con wasm y BIOS embebidos
-test/                   pruebas automatizadas (run-tests.js y exercises-tests.js)
+test/                   pruebas automatizadas (run-tests.js, exercises-tests.js y commands-tests.js)
 docs/                   notas de fidelidad y licencias
 ```
 
@@ -87,6 +100,7 @@ docs/                   notas de fidelidad y licencias
 ```bash
 node test/run-tests.js         # motor: 13 grupos de pruebas
 node test/exercises-tests.js   # resuelve y verifica los ejercicios de JBoss adicionales
+node test/commands-tests.js    # comandos de texto/datos, SELinux, sistema, builtins, openssl/keytool y API de gestión
 ```
 
 `run-tests.js` cubre sin navegador: VFS y permisos, shell, herramientas de texto, dnf, ciclo de vida de JBoss (memoria insuficiente, arranque, scanner, CLI, reload), red y firewall entre VMs, systemd, ejercicios y exportación. `exercises-tests.js` aplica la solución de referencia de cada ejercicio adicional y comprueba que su verificación pase (y que no pase antes de resolverlo).

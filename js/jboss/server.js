@@ -295,7 +295,7 @@
         const root = X.root(this.doc);
         if (X.local(root.name) !== 'server') throw new X.XmlError("Unexpected element '" + root.name + "'", 1, 1);
       } catch (e) {
-        this.log('ERROR', 'org.jboss.as.server', 'Controller Boot Thread', 'WFLYCTL0085: Failed to parse configuration: javax.xml.stream.XMLStreamException: ParseError at [row,col]:[' + (e.line || 1) + ',' + (e.col || 1) + ']\nMessage: ' + e.message);
+        this.log('ERROR', 'org.jboss.as.server', 'Controller Boot Thread', 'WFLYCTL0085: Failed to parse configuration: javax.xml.stream.XMLStreamException: ParseError at [row,col]:[' + (e.line || 1) + ',' + (e.col || 1) + ']\nMessage: ' + (e.java || e.message));
         this.log('FATAL', 'org.jboss.as.server', 'Controller Boot Thread', 'WFLYSRV0056: Server boot has failed in an unrecoverable manner; exiting. See previous messages for details.');
         return this._abortBoot();
       }
@@ -526,7 +526,7 @@
             const d = X.parse(web);
             for (const rr of X.find(d, 'resource-ref')) { const l = X.text(X.kid(rr, 'lookup-name')); if (l) needs.push(l); }
           } catch (e) {
-            return { ok: false, phase: 'PARSE', error: 'org.jboss.as.server.deployment.DeploymentUnitProcessingException: Failed to parse XML descriptor "/content/' + name + '/WEB-INF/web.xml" at [' + e.line + ',' + e.col + ']\n    Caused by: javax.xml.stream.XMLStreamException: ParseError at [row,col]:[' + e.line + ',' + e.col + ']\nMessage: ' + e.message };
+            return { ok: false, phase: 'PARSE', error: 'org.jboss.as.server.deployment.DeploymentUnitProcessingException: Failed to parse XML descriptor "/content/' + name + '/WEB-INF/web.xml" at [' + e.line + ',' + e.col + ']\n    Caused by: javax.xml.stream.XMLStreamException: ParseError at [row,col]:[' + e.line + ',' + e.col + ']\nMessage: ' + (e.java || e.message) };
           }
         }
         const jw = get('WEB-INF/jboss-web.xml');
@@ -716,8 +716,32 @@
           return { status: 401, headers: { 'WWW-Authenticate': 'Digest realm="ManagementRealm"' }, type: 'text/html', body: '<html><head><title>Error</title></head><body>Unauthorized</body></html>' };
         }
         const model = new L.jboss.Model(this.vm, this.home, this);
-        const r = model.execute({ address: [], operation: 'read-attribute', params: { name: 'server-state' } });
-        return { status: 200, type: 'application/json', body: JSON.stringify({ outcome: 'success', result: r.result }) };
+        const toJson = (v) => JSON.stringify(v === undefined ? null : v, (k, x) => x === undefined ? null : x, 2);
+        if (req.method === 'POST') {
+          let op;
+          try { op = JSON.parse(req.body || '{}'); } catch (e) { return { status: 400, type: 'application/json', body: toJson({ outcome: 'failed', 'failure-description': 'WFLYDMHTTP0102: Invalid JSON request' }) }; }
+          const addr = (op.address || []).map(x => Array.isArray(x) ? x : Object.entries(x)[0]);
+          const params = Object.assign({}, op);
+          delete params.operation; delete params.address;
+          const r = model.execute({ address: addr, operation: op.operation, params, user: auth.user });
+          const out = { outcome: r.outcome };
+          if (r.outcome === 'success') out.result = r.result === undefined ? null : r.result; else out['failure-description'] = r['failure-description'];
+          return { status: r.outcome === 'success' ? 200 : 500, type: 'application/json', body: toJson(out) };
+        }
+        // GET /management/subsystem/datasources/data-source/ExampleDS?operation=attribute&name=x
+        const q = {};
+        for (const kv of (req.path.split('?')[1] || '').split('&')) { if (!kv) continue; const [k, v] = kv.split('='); q[decodeURIComponent(k)] = decodeURIComponent(v || ''); }
+        const segs = path.replace(/^\/management\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+        if (segs.length % 2) return { status: 404, type: 'application/json', body: toJson({ outcome: 'failed', 'failure-description': "WFLYCTL0030: No resource definition is registered for address " + L.jboss.addrStr(segs.reduce((acc, s, i) => i % 2 ? acc : acc.concat([[s, segs[i + 1] || '']]), [])) }) };
+        const addr = [];
+        for (let i = 0; i < segs.length; i += 2) addr.push([segs[i], segs[i + 1]]);
+        const operation = q.operation === 'attribute' ? 'read-attribute' : q.operation === 'operation-names' ? 'read-operation-names' : q.operation === 'children-names' ? 'read-children-names' : 'read-resource';
+        const params = { recursive: q.recursive === 'true', 'include-runtime': q['include-runtime'] === 'true' };
+        if (q.name) params.name = q.name;
+        if (q['child-type']) params['child-type'] = q['child-type'];
+        const r = model.execute({ address: addr, operation, params, user: auth.user });
+        if (r.outcome !== 'success') return { status: 404, type: 'application/json', body: toJson({ outcome: 'failed', 'failure-description': r['failure-description'] }) };
+        return { status: 200, type: 'application/json', body: toJson(r.result) };
       }
       return { status: 404, body: 'Not Found' };
     }

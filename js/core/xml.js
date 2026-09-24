@@ -9,7 +9,7 @@
   'use strict';
 
   class XmlError extends Error {
-    constructor(msg, line, col) { super(msg); this.line = line; this.col = col; }
+    constructor(msg, line, col, java, libxml) { super(msg); this.line = line; this.col = col; this.java = java || msg; this.libxml = libxml || msg; }
   }
 
   class XNode {
@@ -30,24 +30,25 @@
         i++;
       }
     };
-    const fail = (m) => { throw new XmlError(m, line, col); };
+    // m: mensaje en español (editor); java: estilo Woodstox (server.log); lib: estilo libxml2 (xmllint)
+    const fail = (m, java, lib) => { throw new XmlError(m, line, col, java, lib); };
     const top = () => stack[stack.length - 1];
     const push = (node) => { node.parent = top(); top().children.push(node); };
 
     while (i < src.length) {
       if (src.startsWith('<!--', i)) {
         const e = src.indexOf('-->', i + 4);
-        if (e < 0) fail('Comentario sin cerrar');
+        if (e < 0) fail('Comentario sin cerrar', 'Unexpected EOF in comment', 'Comment not terminated');
         push(new XNode('comment', { value: src.slice(i + 4, e) }));
         adv(e + 3 - i);
       } else if (src.startsWith('<?', i)) {
         const e = src.indexOf('?>', i);
-        if (e < 0) fail('Instrucción de procesamiento sin cerrar');
+        if (e < 0) fail('Instrucción de procesamiento sin cerrar', 'Unexpected EOF in processing instruction', 'ParsePI: PI never end ...');
         push(new XNode('pi', { value: src.slice(i + 2, e) }));
         adv(e + 2 - i);
       } else if (src.startsWith('<![CDATA[', i)) {
         const e = src.indexOf(']]>', i);
-        if (e < 0) fail('CDATA sin cerrar');
+        if (e < 0) fail('CDATA sin cerrar', 'Unexpected EOF in CDATA section', 'CData section not finished');
         push(new XNode('cdata', { value: src.slice(i + 9, e) }));
         adv(e + 3 - i);
       } else if (src.startsWith('<!', i)) {
@@ -56,32 +57,33 @@
         adv(e + 1 - i);
       } else if (src.startsWith('</', i)) {
         const e = src.indexOf('>', i);
-        if (e < 0) fail('Etiqueta de cierre sin terminar');
+        if (e < 0) fail('Etiqueta de cierre sin terminar', 'Unexpected EOF; was expecting a close tag', "expected '>'");
         const name = src.slice(i + 2, e).trim();
         const cur = top();
-        if (cur.type !== 'element') fail("Etiqueta de cierre inesperada '</" + name + ">'");
-        if (cur.name !== name) fail("Se esperaba '</" + cur.name + ">' pero se encontró '</" + name + ">'");
+        if (cur.type !== 'element') fail("Etiqueta de cierre inesperada '</" + name + ">'", 'Unexpected close tag </' + name + '>; no open start tag', 'Extra content at the end of the document');
+        if (cur.name !== name) fail("Se esperaba '</" + cur.name + ">' pero se encontró '</" + name + ">'", 'Unexpected close tag </' + name + '>; expected </' + cur.name + '>.', 'Opening and ending tag mismatch: ' + cur.name + ' line ' + (cur.line || 1) + ' and ' + name);
         stack.pop();
         adv(e + 1 - i);
       } else if (src[i] === '<') {
         adv(1);
         const m = /^[A-Za-z_][\w.:-]*/.exec(src.slice(i));
-        if (!m) fail('Nombre de elemento inválido');
+        if (!m) fail('Nombre de elemento inválido', "Unexpected character '" + (src[i] || '') + "' (code " + (src.charCodeAt(i) || 0) + ') in start tag', 'StartTag: invalid element name');
         const node = el(m[0]);
+        node.line = line;
         adv(m[0].length);
         for (;;) {
           while (/\s/.test(src[i] || '')) adv(1);
-          if (i >= src.length) fail("Elemento '" + node.name + "' sin cerrar");
+          if (i >= src.length) fail("Elemento '" + node.name + "' sin cerrar", 'Unexpected EOF; was expecting a close tag for element <' + node.name + '>', "Couldn't find end of Start Tag " + node.name + ' line ' + node.line);
           if (src.startsWith('/>', i)) { adv(2); push(node); break; }
           if (src[i] === '>') { adv(1); push(node); stack.push(node); break; }
           const am = /^([A-Za-z_][\w.:-]*)\s*=\s*/.exec(src.slice(i));
-          if (!am) fail("Atributo mal formado en '" + node.name + "'");
+          if (!am) fail("Atributo mal formado en '" + node.name + "'", "Unexpected character '" + (src[i] || '') + "' (code " + (src.charCodeAt(i) || 0) + '); expected a space between attributes', 'attributes construct error');
           adv(am[0].length);
           const q = src[i];
-          if (q !== '"' && q !== "'") fail("Valor de atributo '" + am[1] + "' debe ir entre comillas");
+          if (q !== '"' && q !== "'") fail("Valor de atributo '" + am[1] + "' debe ir entre comillas", "Unexpected character '" + (src[i] || '') + "' (code " + (src.charCodeAt(i) || 0) + '); expected a quote character enclosing value for \'' + am[1] + "'", 'AttValue: " or \' expected');
           const e = src.indexOf(q, i + 1);
-          if (e < 0) fail("Valor de atributo '" + am[1] + "' sin cerrar");
-          if (node.attrs.some(a => a[0] === am[1])) fail("Atributo '" + am[1] + "' duplicado");
+          if (e < 0) fail("Valor de atributo '" + am[1] + "' sin cerrar", 'Unexpected EOF in attribute value', "AttValue: ' expected");
+          if (node.attrs.some(a => a[0] === am[1])) fail("Atributo '" + am[1] + "' duplicado", "Duplicate attribute '" + am[1] + "'.", 'Attribute ' + am[1] + ' redefined');
           node.attrs.push([am[1], decode(src.slice(i + 1, e))]);
           adv(e + 1 - i);
         }
@@ -93,8 +95,8 @@
         adv(end - i);
       }
     }
-    if (stack.length > 1) fail("Elemento '" + top().name + "' no fue cerrado (fin de archivo)");
-    if (!doc.children.some(c => c.type === 'element')) fail('Documento vacío: no hay elemento raíz');
+    if (stack.length > 1) fail("Elemento '" + top().name + "' no fue cerrado (fin de archivo)", 'Unexpected EOF; was expecting a close tag for element <' + top().name + '>', 'Premature end of data in tag ' + top().name + ' line ' + (top().line || 1));
+    if (!doc.children.some(c => c.type === 'element')) fail('Documento vacío: no hay elemento raíz', 'Unexpected EOF in prolog', 'Document is empty');
     return doc;
   }
 

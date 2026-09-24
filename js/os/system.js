@@ -36,10 +36,10 @@
       cmds: ['ls', 'cat', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch', 'chmod', 'chown', 'chgrp', 'ln', 'pwd', 'echo', 'printf', 'head', 'tail',
         'wc', 'sort', 'uniq', 'cut', 'tr', 'tee', 'basename', 'dirname', 'realpath', 'readlink', 'stat', 'du', 'df', 'date', 'sleep',
         'whoami', 'id', 'groups', 'uname', 'env', 'printenv', 'seq', 'yes', 'true', 'false', 'test', '[', 'nl', 'rev', 'base64',
-        'md5sum', 'sha256sum', 'nproc', 'dir', 'mktemp', 'install', 'timeout', 'nohup', 'stdbuf', 'who', 'tac', 'paste', 'split', 'expr', 'hostid', 'dd']
+        'md5sum', 'sha256sum', 'nproc', 'dir', 'comm', 'fold', 'shuf', 'od', 'truncate', 'chcon', 'nice', 'mktemp', 'install', 'timeout', 'nohup', 'stdbuf', 'who', 'tac', 'paste', 'split', 'expr', 'hostid', 'dd']
     },
-    'util-linux': { v: '2.37.4-18', size: 4.2, base: true, desc: 'Collection of basic system utilities', cmds: ['lsblk', 'lscpu', 'dmesg', 'more', 'kill', 'su', 'logger', 'cal', 'mount', 'findmnt', 'last', 'script', 'rename', 'col'] },
-    'procps-ng': { v: '3.3.17-14', size: 1.0, base: true, desc: 'System and process monitoring utilities', cmds: ['ps', 'top', 'free', 'uptime', 'w', 'vmstat', 'pkill', 'pgrep', 'kill', 'watch', 'pidof'] },
+    'util-linux': { v: '2.37.4-18', size: 4.2, base: true, desc: 'Collection of basic system utilities', cmds: ['lsblk', 'lscpu', 'dmesg', 'more', 'kill', 'su', 'logger', 'cal', 'mount', 'findmnt', 'last', 'script', 'rename', 'col', 'column', 'hexdump', 'whereis', 'renice'] },
+    'procps-ng': { v: '3.3.17-14', size: 1.0, base: true, desc: 'System and process monitoring utilities', cmds: ['ps', 'top', 'free', 'uptime', 'w', 'vmstat', 'pkill', 'pgrep', 'kill', 'watch', 'pidof', 'sysctl'] },
     'psmisc': { v: '23.4-3', size: 0.5, base: true, desc: 'Utilities for managing processes on your system', cmds: ['killall', 'pstree', 'fuser'] },
     'findutils': { v: '4.8.0-6', size: 1.8, base: true, desc: 'The GNU versions of find utilities', cmds: ['find', 'xargs'] },
     'grep': { v: '3.6-5', size: 0.8, base: true, desc: 'Pattern matching utilities', cmds: ['grep', 'egrep', 'fgrep'] },
@@ -48,13 +48,21 @@
     'diffutils': { v: '3.7-12', size: 1.5, base: true, desc: 'File comparison utilities', cmds: ['diff', 'cmp'] },
     'less': { v: '590-4', size: 0.4, base: true, desc: 'A text file browser similar to more, but better', cmds: ['less'] },
     'tar': { v: '1.34-6', size: 3.0, base: true, desc: 'GNU file archiving program', cmds: ['tar'] },
-    'gzip': { v: '1.12-1', size: 0.4, base: true, desc: 'The GNU data compression program', cmds: ['gzip', 'gunzip', 'zcat'] },
+    'gzip': { v: '1.12-1', size: 0.4, base: true, desc: 'The GNU data compression program', cmds: ['gzip', 'gunzip', 'zcat', 'zgrep', 'zless'] },
     'hostname': { v: '3.23-6', size: 0.1, base: true, desc: 'Utility to set/show the host name or domain name', cmds: ['hostname'] },
     'shadow-utils': { v: '4.9-8', size: 3.8, base: true, desc: 'Utilities for managing accounts and shadow password files', cmds: ['useradd', 'adduser', 'userdel', 'usermod', 'groupadd', 'groupdel', 'passwd', 'chage', 'newgrp', 'gpasswd'] },
     'sudo': { v: '1.9.5p2-10', size: 4.6, base: true, desc: 'Allows restricted root access for specified users', cmds: ['sudo', 'visudo'] },
     'systemd': { v: '252-32', size: 25.0, base: true, desc: 'System and Service Manager', cmds: ['systemctl', 'journalctl', 'hostnamectl', 'timedatectl', 'reboot', 'poweroff', 'shutdown', 'halt', 'loginctl'] },
     'alternatives': { v: '1.24-1', size: 0.1, base: true, desc: 'A tool to maintain symbolic links determining default commands', cmds: ['alternatives', 'update-alternatives'] },
     'initscripts-service': { v: '10.11.6-1', size: 0.1, base: true, desc: 'Support for the service command', cmds: ['service'] },
+    'glibc-common': { v: '2.34-100', size: 1.2, base: true, desc: 'Common binaries and locale data for glibc', cmds: ['getent'] },
+    'gettext': { v: '0.21-8', size: 1.1, base: true, desc: 'GNU libraries and utilities for producing multi-lingual messages', cmds: ['envsubst'] },
+    'libxml2': { v: '2.9.13-6', size: 0.4, base: true, desc: 'Library providing XML and HTML support (incluye xmllint)', cmds: ['xmllint'] },
+    'libselinux-utils': { v: '3.6-1', size: 0.2, base: true, desc: 'SELinux libselinux utilities', cmds: ['getenforce', 'setenforce'] },
+    'policycoreutils': { v: '3.6-2', size: 0.6, base: true, desc: 'SELinux policy core utilities', cmds: ['sestatus', 'restorecon'] },
+    'audit': { v: '3.1.2-2', size: 0.5, base: true, desc: 'User space tools for kernel auditing', cmds: ['ausearch'] },
+    'logrotate': { v: '3.18.0-8', size: 0.2, base: true, desc: 'Rotates, compresses, removes and mails system log files', cmds: ['logrotate'] },
+    'NetworkManager': { v: '1.46.0-4', size: 6.0, base: true, desc: 'Network connection manager and user applications', cmds: ['nmcli'] },
     'iproute': { v: '6.2.0-6', size: 2.2, base: true, desc: 'Advanced IP routing and network device configuration tools', cmds: ['ip', 'ss'] },
     'iputils': { v: '20210202-9', size: 0.4, base: true, desc: 'Network monitoring tools including ping', cmds: ['ping', 'tracepath'] },
     'curl': { v: '7.76.1-29', size: 0.7, base: true, desc: 'A utility for getting files from remote servers (FTP, HTTP, and others)', cmds: ['curl'] },
@@ -73,7 +81,7 @@
     'openssl': { v: '3.0.7-27', size: 1.9, base: true, desc: 'Utilities from the general purpose cryptography library with TLS implementation', cmds: ['openssl'] },
     // ----- paquetes opcionales (instalables con dnf) -----
     'nano': { v: '5.6.1-5', size: 2.6, desc: 'A small text editor', cmds: ['nano'] },
-    'vim-enhanced': { v: '8.2.2637-20', size: 4.0, desc: 'A version of the VIM editor which includes recent enhancements', cmds: ['vim'] },
+    'vim-enhanced': { v: '8.2.2637-20', size: 4.0, desc: 'A version of the VIM editor which includes recent enhancements', cmds: ['vim', 'xxd'] },
     'unzip': { v: '6.0-56', size: 0.4, desc: 'A utility for unpacking zip files', cmds: ['unzip'] },
     'zip': { v: '3.0-35', size: 0.7, desc: 'A file compression and packaging utility compatible with PKZIP', cmds: ['zip'] },
     'wget': { v: '1.21.1-7', size: 3.2, desc: 'A utility for retrieving files using the HTTP or FTP protocols', cmds: ['wget'] },
@@ -85,12 +93,18 @@
     'nmap-ncat': { v: '7.92-1', size: 0.5, desc: 'Nmap\'s Netcat replacement', cmds: ['nc', 'ncat'] },
     'bind-utils': { v: '9.16.23-18', size: 0.9, desc: 'Utilities for querying DNS name servers', cmds: ['nslookup', 'dig', 'host'] },
     'sysstat': { v: '12.5.4-7', size: 1.6, desc: 'Collection of performance monitoring tools for Linux', cmds: ['iostat', 'mpstat', 'sar', 'pidstat'] },
+    'jq': { v: '1.6-17', size: 0.2, desc: 'Command-line JSON processor', cmds: ['jq'] },
+    'plocate': { v: '1.1.15-1', size: 0.3, desc: 'Much faster locate', cmds: ['locate', 'updatedb'] },
+    'traceroute': { v: '2.1.1-1', size: 0.1, desc: 'Traces the route taken by packets over an IPv4/IPv6 network', cmds: ['traceroute'] },
+    'binutils': { v: '2.35.2-43', size: 6.8, desc: 'A GNU collection of binary utilities', cmds: ['strings'] },
     'git': { v: '2.43.0-1', size: 0.2, desc: 'Fast Version Control System', cmds: [] },
     'java-1.8.0-openjdk': { v: '1.8.0.412.b08-2', size: 42, desc: 'OpenJDK 8 Runtime Environment', jvm: { major: 8, dir: 'java-1.8.0-openjdk', full: '1.8.0_412', build: '1.8.0_412-b08' } },
     'java-11-openjdk': { v: '11.0.23.0.9-3', size: 48, desc: 'OpenJDK 11 Runtime Environment', jvm: { major: 11, dir: 'java-11-openjdk', full: '11.0.23', build: '11.0.23+9-LTS' } },
     'java-17-openjdk': { v: '17.0.11.0.9-3', size: 52, desc: 'OpenJDK 17 Runtime Environment', jvm: { major: 17, dir: 'java-17-openjdk', full: '17.0.11', build: '17.0.11+9-LTS' } },
     'java-21-openjdk': { v: '21.0.3.0.9-1', size: 56, desc: 'OpenJDK 21 Runtime Environment', jvm: { major: 21, dir: 'java-21-openjdk', full: '21.0.3', build: '21.0.3+9-LTS' } }
   };
+
+  const JDK_TOOLS = ['java', 'keytool', 'jcmd', 'jstack', 'jmap', 'jps', 'jar', 'javac', 'jstat', 'jinfo'];
 
   // ---------- Usuarios y grupos (leídos del propio VFS) ----------
   function parseColon(text) {
@@ -256,7 +270,27 @@
     for (const [name, pkg] of Object.entries(PACKAGES)) if (pkg.base) installed[name] = pkg.v + '.' + os.el;
     for (const extra of opts.packages || []) { installPackageFiles(vfs, extra, os); installed[extra] = PACKAGES[extra].v + '.' + os.el; }
     vfs.write('/var/lib/rpm/installed.json', JSON.stringify(installed));
+    ensureBaseConfig(vfs);
     return os;
+  }
+
+  // Configuración base de SELinux, logrotate, sysctl y audit (se crea solo si falta)
+  function ensureBaseConfig(vfs) {
+    const files = {
+      '/etc/selinux/config': '# This file controls the state of SELinux on the system.\n# SELINUX= can take one of these three values:\n#     enforcing - SELinux security policy is enforced.\n#     permissive - SELinux prints warnings instead of enforcing.\n#     disabled - No SELinux policy is loaded.\nSELINUX=enforcing\n# SELINUXTYPE= can take one of these three values:\n#     targeted - Targeted processes are protected,\n#     minimum - Modification of targeted policy. Only selected processes are protected.\n#     mls - Multi Level Security protection.\nSELINUXTYPE=targeted\n',
+      '/etc/logrotate.conf': '# see "man logrotate" for details\n\n# global options do not affect preceding include directives\n\n# rotate log files weekly\nweekly\n\n# keep 4 weeks worth of backlogs\nrotate 4\n\n# create new (empty) log files after rotating old ones\ncreate\n\n# use date as a suffix of the rotated file\ndateext\n\n# uncomment this if you want your log files compressed\n#compress\n\n# packages drop log rotation information into this directory\ninclude /etc/logrotate.d\n\n# system-specific logs may be also be configured here.\n',
+      '/etc/logrotate.d/rsyslog': '/var/log/cron\n/var/log/maillog\n/var/log/messages\n/var/log/secure\n/var/log/spooler\n{\n    missingok\n    sharedscripts\n    postrotate\n        /usr/bin/systemctl -s HUP kill rsyslog.service >/dev/null 2>&1 || true\n    endscript\n}\n',
+      '/etc/logrotate.d/dnf': '/var/log/dnf.log {\n    missingok\n    notifempty\n    rotate 4\n    weekly\n    create 0600 root root\n}\n',
+      '/etc/sysctl.conf': '# sysctl settings are defined through files in\n# /usr/lib/sysctl.d/, /run/sysctl.d/, and /etc/sysctl.d/.\n#\n# Vendors settings live in /usr/lib/sysctl.d/.\n# To override a whole file, create a new file with the same in\n# /etc/sysctl.d/ and put new settings there. To override\n# only specific settings, add a file with a lexically later\n# name in /etc/sysctl.d/ and put new settings there.\n#\n# For more information, see sysctl.conf(5) and sysctl.d(5).\n',
+      '/etc/sysctl.d/99-sysctl.conf': { link: '../sysctl.conf' },
+      '/var/log/audit/audit.log': { data: '', mode: 0o600 },
+      '/var/lib/logrotate/.keep': ''
+    };
+    for (const [p, v] of Object.entries(files)) {
+      if (vfs.tryLookup(p, { follow: false })) continue;
+      vfs.populate({ [p]: v });
+    }
+    try { vfs.stat('/var/log/audit').m = 0o700; } catch (e) { }
   }
 
   // Coloca los archivos de un paquete en el VFS
@@ -266,7 +300,7 @@
     const per = Math.max(20000, Math.round(pkg.size * 1024 * 1024 / Math.max(1, (pkg.cmds || []).length || 1)));
     for (const c of pkg.cmds || []) {
       if (L.cmds && Object.keys(L.cmds).length && !L.cmds[c] && !(L.builtins && L.builtins[c])) continue;
-      const dir = /^(useradd|adduser|userdel|usermod|groupadd|groupdel|visudo|alternatives|update-alternatives|service|reboot|poweroff|shutdown|halt|ifconfig|route|arp|firewalld)$/.test(c) ? '/usr/sbin' : '/usr/bin';
+      const dir = /^(useradd|adduser|userdel|usermod|groupadd|groupdel|visudo|alternatives|update-alternatives|service|sysctl|getenforce|setenforce|sestatus|restorecon|ausearch|logrotate|reboot|poweroff|shutdown|halt|ifconfig|route|arp|firewalld)$/.test(c) ? '/usr/sbin' : '/usr/bin';
       const p = dir + '/' + c;
       if (vfs.exists(p)) continue;
       vfs.write(p, '\x7fELF', { mode: c === 'sudo' ? 0o4111 : c === 'passwd' || c === 'su' ? 0o4755 : 0o755, vsize: per, bin: true });
@@ -276,7 +310,7 @@
       const j = pkg.jvm, base = '/usr/lib/jvm/' + j.dir;
       vfs.mkdir(base + '/bin', { parents: true });
       vfs.mkdir(base + '/lib', { parents: true });
-      for (const b of ['java', 'keytool', 'jcmd', 'jstack', 'jmap', 'jps', 'jar', 'javac']) {
+      for (const b of JDK_TOOLS) {
         vfs.write(base + '/bin/' + b, '\x7fELF', { mode: 0o755, vsize: 16000, bin: true });
         vfs.stat(base + '/bin/' + b).bi = b;
         vfs.stat(base + '/bin/' + b).jvm = j.major;
@@ -292,7 +326,7 @@
         if (existing) vfs.unlink(alt);
         vfs.symlink(base + '/bin/java', alt);
       }
-      for (const b of ['java', 'keytool', 'jar', 'jps', 'jcmd', 'jstack', 'jmap']) {
+      for (const b of JDK_TOOLS.filter(x => x !== 'javac')) {
         if (!vfs.tryLookup('/usr/bin/' + b, { follow: false })) vfs.symlink(b === 'java' ? alt : base + '/bin/' + b, '/usr/bin/' + b);
       }
     }
@@ -321,6 +355,31 @@
     }
   }
 
+  // Agrega comandos que falten en paquetes ya instalados (VMs creadas con
+  // versiones anteriores del laboratorio). No toca /etc/alternatives.
+  function repairPackages(vfs, os) {
+    const installed = installedList(vfs);
+    let changed = false;
+    for (const [name, pkg] of Object.entries(PACKAGES)) {
+      if (!pkg.base && !installed[name]) continue;
+      if (pkg.base && !installed[name]) { installed[name] = pkg.v + '.' + os.el; changed = true; }
+      if (pkg.jvm) {
+        const base = '/usr/lib/jvm/' + pkg.jvm.dir + '/bin/';
+        if (!vfs.isDir(base)) continue;
+        for (const b of JDK_TOOLS) {
+          if (vfs.exists(base + b)) continue;
+          vfs.write(base + b, '\x7fELF', { mode: 0o755, vsize: 16000, bin: true });
+          Object.assign(vfs.stat(base + b), { bi: b, jvm: pkg.jvm.major });
+          if (b !== 'javac' && !vfs.tryLookup('/usr/bin/' + b, { follow: false })) vfs.symlink(base + b, '/usr/bin/' + b);
+        }
+        continue;
+      }
+      installPackageFiles(vfs, name, os);
+    }
+    if (changed) setInstalled(vfs, installed);
+    ensureBaseConfig(vfs);
+  }
+
   function installedList(vfs) {
     try { return JSON.parse(vfs.read('/var/lib/rpm/installed.json')); } catch (e) { return {}; }
   }
@@ -335,5 +394,5 @@
     return Object.assign({ path: r.path }, pkg.jvm);
   }
 
-  L.os = { OS_TEMPLATES, PACKAGES, users, buildBaseImage, installPackageFiles, removePackageFiles, installedList, setInstalled, detectJava };
+  L.os = { OS_TEMPLATES, PACKAGES, users, buildBaseImage, installPackageFiles, removePackageFiles, repairPackages, JDK_TOOLS, installedList, setInstalled, detectJava };
 })(globalThis.JLab = globalThis.JLab || {});

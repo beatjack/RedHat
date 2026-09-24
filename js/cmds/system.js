@@ -17,6 +17,7 @@
     if (!cr) return c.fail("'" + name + "': no such user");
     if (c.args.includes('-u')) { c.println(c.args.includes('-n') ? cr.name : cr.uid); return 0; }
     if (c.args.includes('-g')) { c.println(c.args.includes('-n') ? c.groupName(cr.gid) : cr.gid); return 0; }
+    if (c.args.includes('-Z')) { c.println('unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023'); return 0; }
     if (c.args.includes('-G')) { c.println(cr.gids.map(g => c.args.includes('-n') ? c.groupName(g) : g).join(' ')); return 0; }
     c.println('uid=' + cr.uid + '(' + cr.name + ') gid=' + cr.gid + '(' + c.groupName(cr.gid) + ') groups=' + cr.gids.map(g => g + '(' + c.groupName(g) + ')').join(',') + (name === c.user ? ' context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023' : ''));
     return 0;
@@ -139,7 +140,7 @@
     const totalMem = c.vm.ramMB;
     if (fmt) {
       const cols = fmt[1].split(',');
-      const val = (p, k) => ({ pid: p.pid, ppid: p.ppid, user: p.user, cmd: p.cmd, args: p.cmd, comm: p.name, '%mem': (p.memMB / totalMem * 100).toFixed(1), '%cpu': (p.cpu || 0).toFixed(1), rss: Math.round(p.memMB * 1024), etime: etime(Date.now() - p.start), stat: p.stat, tty: p.tty }[k.toLowerCase()] ?? '');
+      const val = (p, k) => ({ pid: p.pid, ppid: p.ppid, user: p.user, cmd: p.cmd, args: p.cmd, comm: p.name, '%mem': (p.memMB / totalMem * 100).toFixed(1), '%cpu': (p.cpu || 0).toFixed(1), rss: Math.round(p.memMB * 1024), etime: etime(Date.now() - p.start), stat: p.stat, tty: p.tty, ni: p.ni || 0, nice: p.ni || 0, pri: 20 + (p.ni || 0), label: 'system_u:system_r:unconfined_service_t:s0' }[k.toLowerCase()] ?? '');
       c.println(cols.map(k => k.toUpperCase()).join(' '));
       for (const p of rows) c.println(cols.map(k => val(p, k)).join(' '));
       return pfilter && !rows.length ? 1 : 0;

@@ -19,7 +19,7 @@
   }
 
   C.ls = (c) => {
-    const { opts, rest } = getopt(c.args, { flags: 'lahRtr1dFiSAn', long: { all: 'a', 'human-readable': 'h', color: 'color', 'color=auto': 'color', 'almost-all': 'A', recursive: 'R', directory: 'd' } });
+    const { opts, rest } = getopt(c.args, { flags: 'lahRtr1dFiSAnZ', long: { context: 'Z',  all: 'a', 'human-readable': 'h', color: 'color', 'color=auto': 'color', 'almost-all': 'A', recursive: 'R', directory: 'd' } });
     if (opts._bad && !/^--color/.test(opts._bad)) return c.fail("invalid option -- '" + opts._bad.replace(/^-+/, '') + "'\nTry 'ls --help' for more information.", 2);
     const fs = c.fs;
     const color = c.isTTY;
@@ -51,14 +51,15 @@
           const us = opts.n ? String(n.u) : c.userName(n.u), gs = opts.n ? String(n.g) : c.groupName(n.g);
           let disp = color ? colorName(n, name, fs, full) : name;
           if (n.t === 'l') disp += ' -> ' + n.tg;
-          return [modeString(n) + '.', n.t === 'd' ? String(2 + Object.values(n.c).filter(x => x.t === 'd').length) : '1', us, gs, opts.h ? U.human(size) : String(size), U.lsDate(n.mt), disp];
+          const ctx = opts.Z ? L.selinux.contextOf(fs, full || dirPath || '/') + ' ' : '';
+          return [modeString(n) + '.', n.t === 'd' ? String(2 + Object.values(n.c).filter(x => x.t === 'd').length) : '1', us, gs + (ctx ? ' ' + ctx.trim() : ''), opts.h ? U.human(size) : String(size), U.lsDate(n.mt), disp];
         });
         const w = [0, 1, 2, 3, 4].map(i => Math.max(0, ...rows.map(r => r[i].length)));
         if (dirPath !== null) c.println('total ' + (opts.h ? U.human(total * 1024) : total));
         for (const r of rows) c.println(r[0] + ' ' + U.pad(r[1], w[1]) + ' ' + U.pad(r[2], w[2], true) + ' ' + U.pad(r[3], w[3], true) + ' ' + U.pad(r[4], w[4]) + ' ' + r[5] + ' ' + r[6]);
         return;
       }
-      const names = entries.map(([name, n, full]) => (opts.F ? name + (n.t === 'd' ? '/' : n.t === 'l' ? '@' : (n.m & 0o111) ? '*' : '') : name));
+      const names = entries.map(([name, n, full]) => (opts.Z ? L.selinux.contextOf(fs, full) + ' ' : '') + (opts.F ? name + (n.t === 'd' ? '/' : n.t === 'l' ? '@' : (n.m & 0o111) ? '*' : '') : name));
       if (opts['1'] || !c.isTTY) { entries.forEach(([name, n], i) => c.println(color ? colorName(n, names[i], fs) : names[i])); return; }
       if (!names.length) return;
       const cols = c.term ? c.term.cols : 80;
@@ -289,19 +290,45 @@
     return 0;
   };
   C.stat = (c) => {
+    let fmt = null, printf = false, follow = false;
+    const files = [];
+    for (let i = 0; i < c.args.length; i++) {
+      const a = c.args[i];
+      if (a === '-c' || a === '--format') fmt = c.args[++i];
+      else if (a.startsWith('--format=')) fmt = a.slice(9);
+      else if (a === '--printf') { fmt = c.args[++i]; printf = true; }
+      else if (a.startsWith('--printf=')) { fmt = a.slice(9); printf = true; }
+      else if (a === '-L' || a === '--dereference') follow = true;
+      else if (a === '-t' || a === '--terse') fmt = '%n %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o %C';
+      else if (!a.startsWith('-')) files.push(a);
+    }
+    if (!files.length) return c.fail('missing operand');
     let st = 0;
-    for (const f of c.args.filter(a => !a.startsWith('-'))) {
+    for (const f of files) {
       try {
-        const r = c.fs.lookup(c.resolve(f), { cred: c.cred, follow: c.args.includes('-L') });
+        const r = c.fs.lookup(c.resolve(f), { cred: c.cred, follow });
         const n = r.node;
         const size = c.fs.nodeSize(n);
         const d = new Date(n.mt);
         const ts = d.getFullYear() + '-' + U.two(d.getMonth() + 1) + '-' + U.two(d.getDate()) + ' ' + U.clock(n.mt) + '.000000000 +0000';
+        const ino = Math.abs(hashCode(r.path)) % 90000000 + 100000;
+        const type = n.t === 'd' ? 'directory' : n.t === 'l' ? 'symbolic link' : size ? 'regular file' : 'regular empty file';
+        if (fmt !== null) {
+          let out = fmt.replace(/%([%nNsaAUGugFyYxXzZiheCbBoDtTfWw])/g, (m, k) => ({
+            '%': '%', n: f, N: n.t === 'l' ? "'" + f + "' -> '" + n.tg + "'" : "'" + f + "'", s: size, a: (n.m & 0o7777).toString(8), A: modeString(n),
+            U: c.userName(n.u), G: c.groupName(n.g), u: n.u, g: n.g, F: type, y: ts, Y: Math.floor(n.mt / 1000), x: ts, X: Math.floor(n.mt / 1000),
+            z: ts, Z: Math.floor(n.mt / 1000), i: ino, h: n.t === 'd' ? 2 : 1, e: 0, C: L.selinux.contextOf(c.fs, r.path), b: Math.ceil(size / 512), B: 512,
+            o: 4096, D: 'fd00', t: 0, T: 0, f: (n.m).toString(16), W: 0, w: '-'
+          })[k]);
+          if (printf) out = L.cmdutil.unescapeC(out); else out += '\n';
+          c.out(out);
+          continue;
+        }
         c.println('  File: ' + f + (n.t === 'l' ? ' -> ' + n.tg : ''));
-        c.println('  Size: ' + U.pad(size, 10, true) + '\tBlocks: ' + U.pad(Math.ceil(size / 512), 10, true) + ' IO Block: 4096   ' + (n.t === 'd' ? 'directory' : n.t === 'l' ? 'symbolic link' : size ? 'regular file' : 'regular empty file'));
-        c.println('Device: fd00h/64768d\tInode: ' + (Math.abs(hashCode(r.path)) % 90000000 + 100000) + '    Links: 1');
+        c.println('  Size: ' + U.pad(size, 10, true) + '\tBlocks: ' + U.pad(Math.ceil(size / 512), 10, true) + ' IO Block: 4096   ' + type);
+        c.println('Device: fd00h/64768d\tInode: ' + ino + '    Links: 1');
         c.println('Access: (' + (n.m & 0o7777).toString(8).padStart(4, '0') + '/' + modeString(n) + ')  Uid: (' + U.pad(n.u, 5) + '/' + U.pad(c.userName(n.u), 8, true) + ')   Gid: (' + U.pad(n.g, 5) + '/' + U.pad(c.groupName(n.g), 8, true) + ')');
-        c.println('Context: unconfined_u:object_r:usr_t:s0');
+        c.println('Context: ' + L.selinux.contextOf(c.fs, r.path));
         c.println('Access: ' + ts); c.println('Modify: ' + ts); c.println('Change: ' + ts); c.println(' Birth: -');
       } catch (e) { c.err("stat: cannot statx '" + f + "': " + e.message + '\n'); st = 1; }
     }
